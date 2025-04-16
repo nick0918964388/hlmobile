@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 70" fill="none" stroke="currentColor">
+  <!-- 海洋 -->
+  <path d="M0 50 Q 10 45, 20 50 Q 30 55, 40 50 Q 50 45, 60 50 Q 70 55, 80 50 Q 90 45, 100 50 L 100 70 L 0 70 Z" fill="#039be5" stroke="none" />
+  
+  <!-- 波浪紋 -->
+  <path d="M0 53 Q 10 48, 20 53 Q 30 58, 40 53" stroke="#ffffff" stroke-opacity="0.3" stroke-width="1" fill="none" />
+  <path d="M50 53 Q 60 48, 70 53 Q 80 58, 90 53" stroke="#ffffff" stroke-opacity="0.3" stroke-width="1" fill="none" />
+  
+  <!-- 風力渦輪機 1 -->
+  <line x1="30" y1="50" x2="30" y2="30" stroke-width="1.5" />
+  <circle cx="30" cy="30" r="1.5" fill="currentColor" />
+  <path d="M30 30 L 22 25 M30 30 L 38 25 M30 30 L 30 22" stroke-width="1.5" />
+  
+  <!-- 風力渦輪機 2 -->
+  <line x1="50" y1="50" x2="50" y2="25" stroke-width="1.5" />
+  <circle cx="50" cy="25" r="1.5" fill="currentColor" />
+  <path d="M50 25 L 42 20 M50 25 L 58 20 M50 25 L 50 17" stroke-width="1.5" />
+  
+  <!-- 風力渦輪機 3 -->
+  <line x1="70" y1="50" x2="70" y2="32" stroke-width="1.5" />
+  <circle cx="70" cy="32" r="1.5" fill="currentColor" />
+  <path d="M70 32 L 62 27 M70 32 L 78 27 M70 32 L 70 24" stroke-width="1.5" />
+  
+  <!-- 天空 -->
+  <path d="M15 15 Q 17 10, 22 12 Q 25 8, 30 10 Q 35 5, 40 10" stroke-width="1" stroke-opacity="0.6" fill="none" />
+</svg> 

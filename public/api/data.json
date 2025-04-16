@@ -1,0 +1,528 @@
+{
+  "pm": {
+    "list": [
+      {
+        "id": "WOP202000913",
+        "status": "waiting_approval",
+        "created": "2020/10/01 12:19",
+        "equipmentId": "T11AAG01WE001-WE01",
+        "equipmentName": "Earth bar",
+        "location": "Outside",
+        "description": "T11AAG01WE001, UAB10CE001, HL2",
+        "pmType": "Mechanical",
+        "frequency": "Quarterly",
+        "creator": "MAX_NICK",
+        "systemEngineer": "HL2"
+      },
+      {
+        "id": "WOP202000657",
+        "status": "approved",
+        "created": "2020/09/30 15:36",
+        "equipmentId": "BRU10 QB102-WD01",
+        "equipmentName": "U-HFFRA m 5G35 mm² CABLE",
+        "location": "BGA10UC001S0",
+        "description": "HL2",
+        "pmType": "Electrical",
+        "frequency": "Monthly",
+        "creator": "MAX_NICK",
+        "systemEngineer": "HL2"
+      },
+      {
+        "id": "WOP202000524",
+        "status": "approved",
+        "created": "2020/09/25 09:15",
+        "equipmentId": "T22BBG02XE002-XE02",
+        "equipmentName": "Circuit Breaker",
+        "location": "Building A",
+        "description": "Monthly inspection",
+        "pmType": "Electrical",
+        "frequency": "Monthly",
+        "creator": "JOHN_DOE",
+        "systemEngineer": "HL1"
+      }
+    ],
+    "details": {
+      "WOP202000913": {
+        "id": "WOP202000913",
+        "status": "WAPPR",
+        "openTime": "2020/11/29 14:31",
+        "creator": "MAX_NICK",
+        "systemCode": "HL2",
+        "equipmentCode": "",
+        "description": "Earth bar, Outside",
+        "assets": "T11AAG01WE001-WE01",
+        "location": "UAB10CE001",
+        "equipmentType": "T11AAG01WE001",
+        "reportTime": "2020/11/29 14:31",
+        "reportPerson": "MAX_NICK",
+        "checkItems": [
+          {
+            "id": "CI001",
+            "name": "Check physical condition",
+            "standard": "No visible damage",
+            "result": "",
+            "remarks": ""
+          },
+          {
+            "id": "CI002",
+            "name": "Check connections",
+            "standard": "Secure and tight",
+            "result": "",
+            "remarks": ""
+          },
+          {
+            "id": "CI003",
+            "name": "Measure grounding resistance",
+            "standard": "< 5 ohm",
+            "result": "",
+            "remarks": ""
+          }
+        ],
+        "reportItems": [
+          {
+            "id": "RI001",
+            "name": "Maintenance Record",
+            "description": "Record maintenance activities",
+            "completed": false
+          },
+          {
+            "id": "RI002",
+            "name": "Parts Replacement",
+            "description": "Record any replaced parts",
+            "completed": false
+          }
+        ]
+      },
+      "WOP202000657": {
+        "id": "WOP202000657",
+        "status": "APPR",
+        "openTime": "2020/09/30 15:36",
+        "creator": "MAX_NICK",
+        "systemCode": "HL2",
+        "equipmentCode": "",
+        "description": "Monthly cable inspection",
+        "assets": "BRU10 QB102-WD01",
+        "location": "BGA10UC001S0",
+        "equipmentType": "U-HFFRA m 5G35 mm² CABLE",
+        "reportTime": "2020/09/30 15:36",
+        "reportPerson": "MAX_NICK",
+        "checkItems": [
+          {
+            "id": "CI001",
+            "name": "Check cable insulation",
+            "standard": "No visible damage",
+            "result": "",
+            "remarks": ""
+          },
+          {
+            "id": "CI002",
+            "name": "Check cable connections",
+            "standard": "Secure and tight",
+            "result": "",
+            "remarks": ""
+          },
+          {
+            "id": "CI003",
+            "name": "Check for overheating",
+            "standard": "Normal temperature",
+            "result": "",
+            "remarks": ""
+          }
+        ],
+        "reportItems": [
+          {
+            "id": "RI001",
+            "name": "Maintenance Record",
+            "description": "Record maintenance activities",
+            "completed": false
+          },
+          {
+            "id": "RI002",
+            "name": "Parts Replacement",
+            "description": "Record any replaced parts",
+            "completed": false
+          }
+        ]
+      },
+      "WOP202000524": {
+        "id": "WOP202000524",
+        "status": "APPR",
+        "openTime": "2020/09/25 09:15",
+        "creator": "JOHN_DOE",
+        "systemCode": "HL1",
+        "equipmentCode": "",
+        "description": "Monthly inspection of circuit breaker",
+        "assets": "T22BBG02XE002-XE02",
+        "location": "Building A",
+        "equipmentType": "Circuit Breaker",
+        "reportTime": "2020/09/25 09:15",
+        "reportPerson": "JOHN_DOE",
+        "checkItems": [
+          {
+            "id": "CI001",
+            "name": "Check physical condition",
+            "standard": "No visible damage",
+            "result": "",
+            "remarks": ""
+          },
+          {
+            "id": "CI002",
+            "name": "Test circuit breaker operation",
+            "standard": "Operates properly",
+            "result": "",
+            "remarks": ""
+          },
+          {
+            "id": "CI003",
+            "name": "Measure contact resistance",
+            "standard": "Within specifications",
+            "result": "",
+            "remarks": ""
+          }
+        ],
+        "reportItems": [
+          {
+            "id": "RI001",
+            "name": "Maintenance Record",
+            "description": "Record maintenance activities",
+            "completed": false
+          },
+          {
+            "id": "RI002",
+            "name": "Parts Replacement",
+            "description": "Record any replaced parts",
+            "completed": false
+          }
+        ]
+      }
+    },
+    "staffList": [
+      { "id": "EMP001", "name": "John Smith" },
+      { "id": "EMP002", "name": "Mary Johnson" },
+      { "id": "EMP003", "name": "David Lee" },
+      { "id": "EMP004", "name": "Sarah Chen" }
+    ]
+  },
+  "cm": {
+    "list": [
+      {
+        "id": "WOC2020000912",
+        "status": "waiting_approval",
+        "created": "2020/10/01 12:19",
+        "equipmentId": "P1THC-ZERO-C01",
+        "equipmentName": "CUP ZEROC01 Zero Generator",
+        "location": "F15/00203W02",
+        "description": "Efficiency Decrease - Pump Replacement",
+        "abnormalType": "Efficiency Decrease",
+        "maintenanceType": "Emergency Equipment Repair",
+        "creator": "XXX",
+        "systemEngineer": "XXX"
+      },
+      {
+        "id": "WOC2020000657",
+        "status": "approved",
+        "created": "2020/09/30 15:36",
+        "equipmentId": "P3PLUMP-P-LOADZNG03A",
+        "equipmentName": "Pump XXXXXXXX",
+        "location": "F15/00203W02",
+        "description": "Pump efficiency decrease, needs replacement",
+        "abnormalType": "Efficiency Decrease",
+        "maintenanceType": "Emergency Equipment Repair",
+        "creator": "XXX",
+        "systemEngineer": "XXX"
+      },
+      {
+        "id": "WOC2020000543",
+        "status": "approved",
+        "created": "2020/09/24 08:45",
+        "equipmentId": "P4AIR-COMP-01",
+        "equipmentName": "Air Compressor 01",
+        "location": "F15/00204W01",
+        "description": "Abnormal noise during operation",
+        "abnormalType": "Abnormal Noise",
+        "maintenanceType": "Emergency Equipment Repair",
+        "creator": "MAX_NICK",
+        "systemEngineer": "HL1"
+      }
+    ],
+    "details": {
+      "WOC2020000912": {
+        "id": "WOC2020000912",
+        "status": "WAPPR",
+        "openTime": "2020/11/29 14:31",
+        "creator": "XXX",
+        "systemCode": "F15",
+        "equipmentCode": "00203W02",
+        "description": "Efficiency Decrease - Pump Replacement",
+        "assets": "P1THC-ZERO-C01",
+        "location": "F15/00203W02",
+        "equipmentType": "Generator",
+        "abnormalType": "Efficiency Decrease",
+        "maintenanceType": "Emergency Equipment Repair",
+        "workConditions": "必填",
+        "costCenter": "",
+        "longTermMaintenance": false,
+        "reportTime": "2020/11/29 14:31",
+        "reportPerson": "XXX",
+        "checkItems": [
+          {
+            "id": "CI001",
+            "name": "Check pump condition",
+            "standard": "No visible damage",
+            "result": "",
+            "remarks": ""
+          },
+          {
+            "id": "CI002",
+            "name": "Measure pump efficiency",
+            "standard": ">85%",
+            "result": "",
+            "remarks": ""
+          },
+          {
+            "id": "CI003",
+            "name": "Check for leakage",
+            "standard": "No leakage",
+            "result": "",
+            "remarks": ""
+          }
+        ],
+        "reportItems": [
+          {
+            "id": "RI001",
+            "name": "Failure Analysis",
+            "description": "Analyze the cause of failure",
+            "completed": false
+          },
+          {
+            "id": "RI002",
+            "name": "Parts Replacement",
+            "description": "Record any replaced parts",
+            "completed": false
+          }
+        ]
+      },
+      "WOC2020000657": {
+        "id": "WOC2020000657",
+        "status": "APPR",
+        "openTime": "2020/09/30 15:36",
+        "creator": "XXX",
+        "systemCode": "F15",
+        "equipmentCode": "00203W02",
+        "description": "Pump efficiency decrease, needs replacement",
+        "assets": "P3PLUMP-P-LOADZNG03A",
+        "location": "F15/00203W02",
+        "equipmentType": "Pump",
+        "abnormalType": "Efficiency Decrease",
+        "maintenanceType": "Emergency Equipment Repair",
+        "workConditions": "必填",
+        "costCenter": "",
+        "longTermMaintenance": false,
+        "reportTime": "2020/09/30 15:36",
+        "reportPerson": "XXX",
+        "checkItems": [
+          {
+            "id": "CI001",
+            "name": "Check pump condition",
+            "standard": "No visible damage",
+            "result": "",
+            "remarks": ""
+          },
+          {
+            "id": "CI002",
+            "name": "Measure pump efficiency",
+            "standard": ">85%",
+            "result": "",
+            "remarks": ""
+          },
+          {
+            "id": "CI003",
+            "name": "Check for abnormal noise",
+            "standard": "No abnormal noise",
+            "result": "",
+            "remarks": ""
+          }
+        ],
+        "reportItems": [
+          {
+            "id": "RI001",
+            "name": "Failure Analysis",
+            "description": "Analyze the cause of failure",
+            "completed": false
+          },
+          {
+            "id": "RI002",
+            "name": "Parts Replacement",
+            "description": "Record any replaced parts",
+            "completed": false
+          }
+        ]
+      },
+      "WOC2020000543": {
+        "id": "WOC2020000543",
+        "status": "APPR",
+        "openTime": "2020/09/24 08:45",
+        "creator": "MAX_NICK",
+        "systemCode": "F15",
+        "equipmentCode": "00204W01",
+        "description": "Abnormal noise during operation",
+        "assets": "P4AIR-COMP-01",
+        "location": "F15/00204W01",
+        "equipmentType": "Air Compressor",
+        "abnormalType": "Abnormal Noise",
+        "maintenanceType": "Emergency Equipment Repair",
+        "workConditions": "必填",
+        "costCenter": "",
+        "longTermMaintenance": false,
+        "reportTime": "2020/09/24 08:45",
+        "reportPerson": "MAX_NICK",
+        "checkItems": [
+          {
+            "id": "CI001",
+            "name": "Check compressor bearings",
+            "standard": "No visible damage",
+            "result": "",
+            "remarks": ""
+          },
+          {
+            "id": "CI002",
+            "name": "Check belt condition",
+            "standard": "No wear or damage",
+            "result": "",
+            "remarks": ""
+          },
+          {
+            "id": "CI003",
+            "name": "Measure vibration",
+            "standard": "Within normal range",
+            "result": "",
+            "remarks": ""
+          }
+        ],
+        "reportItems": [
+          {
+            "id": "RI001",
+            "name": "Failure Analysis",
+            "description": "Analyze the cause of noise",
+            "completed": false
+          },
+          {
+            "id": "RI002",
+            "name": "Parts Replacement",
+            "description": "Record any replaced parts",
+            "completed": false
+          }
+        ]
+      }
+    },
+    "equipmentOptions": [
+      { "id": "P1THC-ZERO-C01", "name": "CUP ZEROC01 Zero Generator", "location": "F15/00203W02" },
+      { "id": "P3PLUMP-P-LOADZNG03A", "name": "Pump XXXXXXXX", "location": "F15/00203W02" },
+      { "id": "P4AIR-COMP-01", "name": "Air Compressor 01", "location": "F15/00204W01" }
+    ],
+    "abnormalOptions": [
+      "Efficiency Decrease",
+      "Failure Shutdown",
+      "Abnormal Vibration",
+      "Abnormal Noise",
+      "Leakage",
+      "Component Damage"
+    ],
+    "maintenanceOptions": [
+      "緊急設備修復",
+      "計劃內維修",
+      "預防性維護",
+      "系統升級",
+      "設備更換"
+    ],
+    "staffList": [
+      { "id": "EMP001", "name": "John Smith" },
+      { "id": "EMP002", "name": "Mary Johnson" },
+      { "id": "EMP003", "name": "David Lee" },
+      { "id": "EMP004", "name": "Sarah Chen" }
+    ]
+  },
+  "statusTranslations": {
+    "WAPPR": {
+      "zh": "等待核准",
+      "en": "Waiting for Approval"
+    },
+    "WMATL": {
+      "zh": "等待物料",
+      "en": "Waiting for Material"
+    },
+    "WSCHED": {
+      "zh": "等待排程",
+      "en": "Waiting to be Scheduled"
+    },
+    "WPCOND": {
+      "zh": "等待工廠條件",
+      "en": "Waiting for Plant Condition"
+    },
+    "APPR": {
+      "zh": "已核准",
+      "en": "Approved"
+    },
+    "INPRG": {
+      "zh": "進行中",
+      "en": "In Progress"
+    },
+    "CAN": {
+      "zh": "已取消",
+      "en": "Canceled"
+    },
+    "COMP": {
+      "zh": "已完成",
+      "en": "Complete"
+    },
+    "CLOSE": {
+      "zh": "已關閉",
+      "en": "Closed"
+    }
+  },
+  "users": {
+    "current": {
+      "id": "USR001",
+      "username": "max_nick",
+      "name": "Max Nick",
+      "email": "max.nick@example.com",
+      "avatar": "/images/avatars/default.png",
+      "role": "System Admin",
+      "groups": ["Maintenance", "System Admin"],
+      "department": "Engineering",
+      "permissions": ["pm.access", "cm.access", "admin.access"]
+    },
+    "list": [
+      {
+        "id": "USR001",
+        "username": "max_nick",
+        "name": "Max Nick",
+        "email": "max.nick@example.com",
+        "avatar": "/images/avatars/default.png",
+        "role": "System Admin",
+        "groups": ["Maintenance", "System Admin"],
+        "department": "Engineering"
+      },
+      {
+        "id": "USR002",
+        "username": "john_doe",
+        "name": "John Doe",
+        "email": "john.doe@example.com",
+        "avatar": "/images/avatars/default.png",
+        "role": "Technician",
+        "groups": ["Maintenance"],
+        "department": "Maintenance"
+      },
+      {
+        "id": "USR003",
+        "username": "sarah_chen",
+        "name": "Sarah Chen",
+        "email": "sarah.chen@example.com",
+        "avatar": "/images/avatars/default.png",
+        "role": "Engineer",
+        "groups": ["Engineering"],
+        "department": "Engineering"
+      }
+    ]
+  }
+} 
