@@ -20,35 +20,36 @@ export default function MaintenancePage() {
     router.push('/');
   };
 
-  useEffect(() => {
-    const checkSystemHealth = async () => {
-      if (checking) return; // 防止多次同時檢查
+  // 系統健康檢查函數
+  const checkSystemHealth = async () => {
+    if (checking) return; // 防止多次同時檢查
+    
+    try {
+      setChecking(true);
+      console.log('正在檢查系統健康狀態...');
+      const healthStatus = await api.health.getSystemHealth();
+      console.log('取得健康狀態:', healthStatus);
+      setHealthData(healthStatus);
       
-      try {
-        setChecking(true);
-        console.log('正在檢查系統健康狀態...');
-        const healthStatus = await api.health.getSystemHealth();
-        console.log('取得健康狀態:', healthStatus);
-        setHealthData(healthStatus);
-        
-        // 如果系統恢復正常，則重導回首頁
-        if (healthStatus.status === 'ok') {
-          console.log('系統恢復正常，準備重導至首頁');
-          router.push('/');
-        } else {
-          console.log('系統仍處於維護狀態:', healthStatus.status);
-        }
-        
-      } catch (error) {
-        console.error('獲取系統健康狀態失敗:', error);
-      } finally {
-        setLoading(false);
-        setChecking(false);
-        // 重置倒數計時
-        setCountdown(30);
+      // 如果系統恢復正常，則重導回首頁
+      if (healthStatus.status === 'ok') {
+        console.log('系統恢復正常，準備重導至首頁');
+        router.push('/');
+      } else {
+        console.log('系統仍處於維護狀態:', healthStatus.status);
       }
-    };
+      
+    } catch (error) {
+      console.error('獲取系統健康狀態失敗:', error);
+    } finally {
+      setLoading(false);
+      setChecking(false);
+      // 重置倒數計時
+      setCountdown(30);
+    }
+  };
 
+  useEffect(() => {
     checkSystemHealth();
     
     // 每30秒檢查一次系統狀態，並顯示倒數計時
