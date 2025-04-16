@@ -3,10 +3,11 @@
 import { useState, useEffect } from 'react';
 import api, { PMWorkOrder, CMWorkOrder } from '@/services/api';
 import { SkeletonList, SkeletonTable } from '@/components/Skeleton';
+import { useApiData } from '@/hooks/useApiData';
 
 export default function ExamplePage() {
   // 使用 Hook 加載所有數據
-  const { data, loading: allDataLoading, error: allDataError } = api.useApiData();
+  const { data, loading: allDataLoading, error: allDataError } = useApiData();
   
   // PM 工單列表
   const [pmWorkOrders, setPmWorkOrders] = useState<PMWorkOrder[]>([]);
@@ -162,7 +163,7 @@ export default function ExamplePage() {
               <div className="mb-6">
                 <h3 className="text-lg font-medium mb-2">PM 工單列表</h3>
                 <ul className="list-disc pl-5">
-                  {data.pm.list.map(order => (
+                  {data.pm.list.map((order: PMWorkOrder) => (
                     <li key={order.id} className="mb-2">
                       <span className="font-medium">{order.id}</span> - 
                       {order.description}
@@ -177,7 +178,7 @@ export default function ExamplePage() {
               <div>
                 <h3 className="text-lg font-medium mb-2">CM 工單列表</h3>
                 <ul className="list-disc pl-5">
-                  {data.cm.list.map(order => (
+                  {data.cm.list.map((order: CMWorkOrder) => (
                     <li key={order.id} className="mb-2">
                       <span className="font-medium">{order.id}</span> - 
                       {order.description}
@@ -192,7 +193,7 @@ export default function ExamplePage() {
               <div className="mt-6">
                 <h3 className="text-lg font-medium mb-2">CM 設備選項</h3>
                 <ul className="list-disc pl-5">
-                  {data.cm.equipmentOptions.map(option => (
+                  {data.cm.equipmentOptions.map((option: { id: string; name: string; location: string }) => (
                     <li key={option.id}>
                       {option.name} ({option.location})
                     </li>
