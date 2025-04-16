@@ -235,7 +235,21 @@ const API_CONFIG = {
 
 // 建構API URL的輔助函數
 const buildApiUrl = (scriptName: string, params?: Record<string, string | number | boolean>) => {
-  let url = `${API_CONFIG.baseUrl}${API_CONFIG.maxApiPath}/${scriptName}`;
+  // 判斷是否在客戶端且是生產環境，如果是則使用代理
+  const isClient = typeof window !== 'undefined';
+  const isProduction = process.env.NODE_ENV === 'production';
+  
+  let url;
+  if (isClient && isProduction) {
+    // 使用代理路徑，去除原本的基本 URL
+    const apiPath = API_CONFIG.maxApiPath.startsWith('/') 
+      ? API_CONFIG.maxApiPath.substring(1) 
+      : API_CONFIG.maxApiPath;
+    url = `/api/proxy/${apiPath}/${scriptName}`;
+  } else {
+    // 開發環境使用原始設定
+    url = `${API_CONFIG.baseUrl}${API_CONFIG.maxApiPath}/${scriptName}`;
+  }
   
   const queryParams = API_CONFIG.lean ? { lean: 1 } : {};
   
