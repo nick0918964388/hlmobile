@@ -85,7 +85,7 @@ const WorkReport: React.FC<WorkReportProps> = ({ workOrderId, onCompleteStatusCh
       en: 'Resource'
     },
     laborHours: {
-      zh: '施工人員工時',
+      zh: '人員工時',
       en: 'Labor Hours'
     },
     materials: {
