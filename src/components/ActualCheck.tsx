@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { CheckItem as ApiCheckItem } from '@/services/api';
 
 interface Media {
@@ -18,6 +18,7 @@ interface CheckItem {
   media: Media[];
   assetNum?: string;
   compositeId?: string;
+  wonum?: string;
 }
 
 interface AssetGroup {
@@ -30,10 +31,29 @@ interface AssetGroup {
 
 interface ActualCheckProps {
   workOrderId: string;
-  onCompleteStatusChange?: (isComplete: boolean) => void;
+  onCompleteStatusChange?: (isComplete: boolean, checkItems: ApiCheckItem[]) => void;
   initialCheckItems?: ApiCheckItem[];
   assets?: string;
   route?: string;
+}
+
+// 防抖函數
+function debounce<T extends (...args: any[]) => any>(
+  func: T,
+  wait: number
+): (...args: Parameters<T>) => void {
+  let timeout: ReturnType<typeof setTimeout> | null = null;
+  
+  return function(...args: Parameters<T>) {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+    
+    timeout = setTimeout(() => {
+      func(...args);
+      timeout = null;
+    }, wait);
+  };
 }
 
 const ActualCheck: React.FC<ActualCheckProps> = ({ 
@@ -59,7 +79,8 @@ const ActualCheck: React.FC<ActualCheckProps> = ({
         note: item.remarks,
         media: [],
         assetNum: assetNum,
-        compositeId: `${item.id}_${assetNum}`
+        compositeId: `${item.id}_${assetNum}`,
+        wonum: item.wonum || workOrderId
       };
     });
   };
@@ -76,6 +97,9 @@ const ActualCheck: React.FC<ActualCheckProps> = ({
   const videoInputRef = useRef<HTMLInputElement>(null);
   const [activeItemId, setActiveItemId] = useState<string | null>(null);
   const [mediaType, setMediaType] = useState<'image' | 'video'>('image');
+
+  // 追踪之前的檢查項目狀態
+  const prevCheckItemsRef = useRef<string>('');
 
   useEffect(() => {
     if (checkItems.length > 0) {
@@ -138,10 +162,84 @@ const ActualCheck: React.FC<ActualCheckProps> = ({
     setCheckItems(mapApiCheckItemsToInternal(initialCheckItems));
   }, [initialCheckItems]);
 
+  // 確保在初始渲染時就計算和通知完成狀態
   useEffect(() => {
-    const isComplete = checkItems.every(item => item.status !== '');
-    onCompleteStatusChange?.(isComplete);
-  }, [checkItems, onCompleteStatusChange]);
+    // 在初始渲染時檢查是否所有項目都已完成
+    if (checkItems.length > 0) {
+      const isComplete = checkItems.every(item => item.status !== '');
+      
+      const apiCheckItems: ApiCheckItem[] = checkItems.map(item => ({
+        id: item.id,
+        name: item.title,
+        standard: item.standard,
+        result: item.status,
+        remarks: item.note || '',
+        assetNum: item.assetNum,
+        wonum: item.wonum
+      }));
+      
+      // 馬上通知父組件初始狀態
+      onCompleteStatusChange?.(isComplete, apiCheckItems);
+    }
+  }, []); // 只在初始渲染時執行一次
+
+  // 分離檢查狀態和筆記的更新
+  useEffect(() => {
+    if (checkItems.length > 0) {
+      const isComplete = checkItems.every(item => item.status !== '');
+      
+      const apiCheckItems: ApiCheckItem[] = checkItems.map(item => ({
+        id: item.id,
+        name: item.title,
+        standard: item.standard,
+        result: item.status,
+        remarks: item.note || '',
+        assetNum: item.assetNum,
+        wonum: item.wonum
+      }));
+      
+      // 檢查是否真的需要更新，只有當status變化時才立即通知
+      const statusesOnly = checkItems.map(item => ({ id: item.id, status: item.status }));
+      const statusesString = JSON.stringify(statusesOnly);
+      
+      // 使用完整項目的字符串來追蹤所有變化
+      const checkItemsString = JSON.stringify(apiCheckItems);
+      
+      // 如果狀態或完整內容變化了，則更新
+      if (checkItemsString !== prevCheckItemsRef.current) {
+        prevCheckItemsRef.current = checkItemsString;
+        onCompleteStatusChange?.(isComplete, apiCheckItems);
+      }
+    }
+  }, [checkItems, onCompleteStatusChange, workOrderId]);
+
+  // 修改防抖函數為獨立函數，不需要在每次渲染時重新創建
+  const debounceMap = useRef<{[key: string]: ReturnType<typeof setTimeout>}>({});
+
+  const handleNoteChange = (itemId: string, assetNum: string, note: string) => {
+    const compositeId = `${itemId}_${assetNum || 'Default'}`;
+    
+    // 清除先前的防抖計時器
+    if (debounceMap.current[compositeId]) {
+      clearTimeout(debounceMap.current[compositeId]);
+    }
+
+    // 設置新的防抖計時器
+    debounceMap.current[compositeId] = setTimeout(() => {
+      const updatedItems = checkItems.map(item => {
+        if (item.compositeId === compositeId) {
+          return { ...item, note };
+        }
+        return item;
+      });
+      
+      setCheckItems(updatedItems);
+      updateAssetGroupWithItems(updatedItems);
+    }, 300);
+  };
+
+  // 為每個textarea創建ref
+  const textareaRefs = useRef<{[key: string]: HTMLTextAreaElement | null}>({});
 
   const handleStatusChange = (itemId: string, assetNum: string, newStatus: 'v' | 'x' | 'na') => {
     const compositeId = `${itemId}_${assetNum || 'Default'}`;
@@ -150,21 +248,6 @@ const ActualCheck: React.FC<ActualCheckProps> = ({
       if (item.compositeId === compositeId) {
         const status = item.status === newStatus ? '' as const : newStatus;
         return { ...item, status };
-      }
-      return item;
-    });
-    
-    setCheckItems(updatedItems);
-    
-    updateAssetGroupWithItems(updatedItems);
-  };
-
-  const handleNoteChange = (itemId: string, assetNum: string, note: string) => {
-    const compositeId = `${itemId}_${assetNum || 'Default'}`;
-    
-    const updatedItems = checkItems.map(item => {
-      if (item.compositeId === compositeId) {
-        return { ...item, note };
       }
       return item;
     });
@@ -507,8 +590,9 @@ const ActualCheck: React.FC<ActualCheckProps> = ({
                                   Notes
                                 </label>
                                 <textarea
+                                  key={item.id + '-notes'}
                                   rows={2}
-                                  value={item.note || ''}
+                                  defaultValue={item.note || ''}
                                   onChange={(e) => handleNoteChange(item.id, item.assetNum || 'Default', e.target.value)}
                                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
                                   placeholder="Add any relevant notes or observations"

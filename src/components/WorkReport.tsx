@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { ReportItem, LaborResource, MaterialResource, ToolResource } from '@/services/api';
 
@@ -25,7 +25,12 @@ interface LaborHour {
 
 interface WorkReportProps {
   workOrderId: string;
-  onCompleteStatusChange?: (isComplete: boolean) => void;
+  onCompleteStatusChange?: (isComplete: boolean, updatedResources?: {
+    labor: LaborResource[];
+    materials: MaterialResource[];
+    tools: ToolResource[];
+    hasNewResources?: boolean;
+  }) => void;
   initialReportItems?: ReportItem[];
   resources?: {
     labor?: LaborResource[];
@@ -49,31 +54,28 @@ const WorkReport: React.FC<WorkReportProps> = ({ workOrderId, onCompleteStatusCh
   const [customMaterial, setCustomMaterial] = useState(false);
   const [customTool, setCustomTool] = useState(false);
   const [customLabor, setCustomLabor] = useState(false);
+  const [isComplete, setIsComplete] = useState(false);
+  const [hasNewResources, setHasNewResources] = useState(false);
+  
+  // 用來記錄上一次的資源數據快照
+  const prevResourcesRef = useRef<string>('');
 
   // 模擬材料列表
   const materialList = [
-    { code: 'M001', name: '螺絲' },
-    { code: 'M002', name: '螺帽' },
-    { code: 'M003', name: '墊片' },
-    { code: 'M004', name: '電線' },
-    { code: 'M005', name: '接頭' }
+    { code: '11R22.5GT-7', name: 'Goodyear 11R22.5G318 Trailer Tire' },
+    { code: '0-0031', name: 'Elbow, Street- 1-1/8 In X 90 Deg' }
   ];
 
   // 模擬工具列表
   const toolList = [
-    { code: 'T001', name: '扳手' },
-    { code: 'T002', name: '螺絲刀' },
-    { code: 'T003', name: '鉗子' },
-    { code: 'T004', name: '捶子' },
-    { code: 'T005', name: '電鑽' }
+    { code: 'GENERATO', name: '400W ELECTRIC GENERATOR' }
   ];
 
   // 模擬人員列表
   const staffList = [
-    { id: 'S001', name: '張三' },
-    { id: 'S002', name: '李四' },
-    { id: 'S003', name: '王五' },
-    { id: 'S004', name: '趙六' }
+    { id: 'FT1', name: 'Electrical Technician' },
+    { id: 'FT2', name: 'Electrical Technician' },
+    
   ];
 
   // 文字翻譯對照表
@@ -246,13 +248,152 @@ const WorkReport: React.FC<WorkReportProps> = ({ workOrderId, onCompleteStatusCh
     localStorage.setItem(`workReport_${workOrderId}`, JSON.stringify(dataToSave));
 
     // 檢查是否有任何資源被填寫
-    const isComplete = 
+    const complete = 
       (materials.length > 0 || tools.length > 0 || laborHours.length > 0) &&
-      (reportItems.length === 0 || reportItems.every(item => item.completed));
+      reportItems.every(item => item.completed);
     
-    onCompleteStatusChange?.(isComplete);
+    setIsComplete(complete);
+    
+    // 使用ref記錄前一次的資源快照
+    const resourcesSnapshot = JSON.stringify({ materials, tools, laborHours });
+    
+    // 只在資源實際變化時才通知父組件
+    if (resourcesSnapshot !== prevResourcesRef.current) {
+      const prevResources = prevResourcesRef.current ? JSON.parse(prevResourcesRef.current) : { materials: [], tools: [], laborHours: [] };
+      prevResourcesRef.current = resourcesSnapshot;
+      
+      // 將資源資料轉換為API格式 - 確保ID穩定並標記狀態
+      const updatedResources: {
+        labor: LaborResource[];
+        materials: MaterialResource[];
+        tools: ToolResource[];
+      } = {
+        labor: laborHours.map(labor => {
+          // 確定是否是新增的資源
+          const isNew = !labor.id || labor.id.startsWith('labor_');
+          // 尋找在前一個快照中是否存在此資源
+          const prevLabor = isNew ? null : prevResources.laborHours.find((item: LaborHour) => item.id === labor.id);
+          
+          return {
+            id: labor.id || `L_${labor.staffId}_${labor.staffName.replace(/\s+/g, '_')}`,
+            name: labor.staffName,
+            laborCode: labor.staffId,
+            craftType: '',
+            hours: labor.hours,
+            rate: 0,
+            cost: 0,
+            status: isNew ? 'new' as const : (prevLabor ? 'update' as const : 'new' as const)
+          };
+        }),
+        materials: materials.map(material => {
+          // 確定是否是新增的資源
+          const isNew = !material.id || material.id.startsWith('material_');
+          // 尋找在前一個快照中是否存在此資源
+          const prevMaterial = isNew ? null : prevResources.materials.find((item: Material) => item.id === material.id);
+          
+          return {
+            id: material.id || `M_${material.code}_${material.name.replace(/\s+/g, '_')}`,
+            itemNum: material.code,
+            name: material.name,
+            description: material.name,
+            quantity: material.quantity,
+            unitCost: 0,
+            totalCost: 0,
+            status: isNew ? 'new' as const : (prevMaterial ? 'update' as const : 'new' as const)
+          };
+        }),
+        tools: tools.map(tool => {
+          // 確定是否是新增的資源
+          const isNew = !tool.id || tool.id.startsWith('tool_');
+          // 尋找在前一個快照中是否存在此資源
+          const prevTool = isNew ? null : prevResources.tools.find((item: Tool) => item.id === tool.id);
+          
+          return {
+            id: tool.id || `T_${tool.code}_${tool.name.replace(/\s+/g, '_')}`,
+            toolCode: tool.code,
+            name: tool.name,
+            description: tool.name,
+            quantity: tool.quantity,
+            status: isNew ? 'new' as const : (prevTool ? 'update' as const : 'new' as const)
+          };
+        })
+      };
+      
+      // 獲取已刪除的資源
+      if (prevResourcesRef.current) {
+        // 處理已刪除的勞工資源
+        const deletedLabor: LaborResource[] = prevResources.laborHours
+          .filter((prevLabor: LaborHour) => !laborHours.some(labor => labor.id === prevLabor.id))
+          .map((labor: LaborHour) => ({
+            id: labor.id,
+            name: labor.staffName,
+            laborCode: labor.staffId,
+            craftType: '',
+            hours: labor.hours,
+            rate: 0,
+            cost: 0,
+            status: 'delete' as const
+          }));
+        
+        if (deletedLabor.length > 0) {
+          updatedResources.labor = [...updatedResources.labor, ...deletedLabor];
+        }
+        
+        // 處理已刪除的物料資源
+        const deletedMaterials: MaterialResource[] = prevResources.materials
+          .filter((prevMaterial: Material) => !materials.some(material => material.id === prevMaterial.id))
+          .map((material: Material) => ({
+            id: material.id,
+            itemNum: material.code,
+            name: material.name,
+            description: material.name,
+            quantity: material.quantity,
+            unitCost: 0,
+            totalCost: 0,
+            status: 'delete' as const
+          }));
+          
+        if (deletedMaterials.length > 0) {
+          updatedResources.materials = [...updatedResources.materials, ...deletedMaterials];
+        }
+        
+        // 處理已刪除的工具資源
+        const deletedTools: ToolResource[] = prevResources.tools
+          .filter((prevTool: Tool) => !tools.some(tool => tool.id === prevTool.id))
+          .map((tool: Tool) => ({
+            id: tool.id,
+            toolCode: tool.code,
+            name: tool.name,
+            description: tool.name,
+            quantity: tool.quantity,
+            status: 'delete' as const
+          }));
+          
+        if (deletedTools.length > 0) {
+          updatedResources.tools = [...updatedResources.tools, ...deletedTools];
+        }
+      }
+      
+      // 檢查是否有新增的材料或工具
+      const hasNewMaterials = updatedResources.materials.some(material => material.status === 'new');
+      const hasNewTools = updatedResources.tools.some(tool => tool.status === 'new');
+      
+      // 更新本地狀態
+      setHasNewResources(hasNewMaterials || hasNewTools);
+      
+      // 直接將資源和狀態通知父組件，讓父組件決定如何提示用戶
+      onCompleteStatusChange?.(complete, {
+        ...updatedResources,
+        hasNewResources: hasNewMaterials || hasNewTools
+      });
+    }
   }, [materials, tools, laborHours, reportItems, workOrderId, onCompleteStatusChange]);
 
+  // 清除提示
+  const dismissWarning = () => {
+    setHasNewResources(false);
+  };
+  
   // 處理報告項目狀態變更
   const handleReportItemStatusChange = (id: string, completed: boolean) => {
     setReportItems(items => 
@@ -448,12 +589,9 @@ const WorkReport: React.FC<WorkReportProps> = ({ workOrderId, onCompleteStatusCh
                 <td className="px-4 py-3 whitespace-nowrap text-sm">{material.name}</td>
                 <td className="px-4 py-3 whitespace-nowrap text-sm">{material.quantity}</td>
                 <td className="px-4 py-3 whitespace-nowrap text-sm">
-                  <button
-                    onClick={() => handleRemoveMaterial(material.id)}
-                    className="text-red-600 hover:text-red-800"
-                  >
+                  <span className="text-gray-400 cursor-not-allowed" title="不允許刪除材料">
                     {t('remove')}
-                  </button>
+                  </span>
                 </td>
               </tr>
             ))}
@@ -498,12 +636,9 @@ const WorkReport: React.FC<WorkReportProps> = ({ workOrderId, onCompleteStatusCh
                 <td className="px-4 py-3 whitespace-nowrap text-sm">{tool.name}</td>
                 <td className="px-4 py-3 whitespace-nowrap text-sm">{tool.quantity}</td>
                 <td className="px-4 py-3 whitespace-nowrap text-sm">
-                  <button
-                    onClick={() => handleRemoveTool(tool.id)}
-                    className="text-red-600 hover:text-red-800"
-                  >
+                  <span className="text-gray-400 cursor-not-allowed" title="不允許刪除工具">
                     {t('remove')}
-                  </button>
+                  </span>
                 </td>
               </tr>
             ))}
@@ -516,6 +651,32 @@ const WorkReport: React.FC<WorkReportProps> = ({ workOrderId, onCompleteStatusCh
   return (
     <div className="flex-1 overflow-auto bg-gray-50">
       <div className="mx-auto p-4 max-w-4xl">
+        {/* 頂部提示訊息 */}
+        {hasNewResources && (
+          <div className="mb-4 bg-yellow-50 border-l-4 border-yellow-400 p-4 relative">
+            <button 
+              onClick={dismissWarning}
+              className="absolute top-2 right-2 text-gray-400 hover:text-gray-600"
+            >
+              ×
+            </button>
+            <div className="flex">
+              <div className="flex-shrink-0">
+                <svg className="h-5 w-5 text-yellow-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <div className="ml-3">
+                <p className="text-sm text-yellow-700">
+                  {language === 'zh' 
+                    ? '儲存後，這些材料/工具將從倉庫庫存中扣除。' 
+                    : 'After saving, these materials/tools will be deducted from the warehouse inventory.'}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* 報告項目部分 */}
         {reportItems.length > 0 && (
           <div className="bg-white rounded-lg shadow-md mb-4">

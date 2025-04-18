@@ -19,15 +19,30 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
     abnormalType: false,
     workConditions: false
   });
+  const [selectedStaff, setSelectedStaff] = useState<string>('');
   const [maintenanceTime, setMaintenanceTime] = useState({
     startDate: '',
     endDate: ''
   });
-  const [selectedStaff, setSelectedStaff] = useState('');
-  const [showStaffSelect, setShowStaffSelect] = useState(false);
+  
+  // 添加數據變更狀態
+  const [isDirty, setIsDirty] = useState<boolean>(false);
+  // 添加原始數據狀態
+  const [originalStaff, setOriginalStaff] = useState<string>('');
+  const [originalTime, setOriginalTime] = useState({
+    startDate: '',
+    endDate: ''
+  });
   
   // 可編輯欄位狀態
   const [editableFields, setEditableFields] = useState({
+    description: '',
+    assets: '',
+    abnormalType: ''
+  });
+  
+  // 原始可編輯欄位狀態，用於比較
+  const [originalEditableFields, setOriginalEditableFields] = useState({
     description: '',
     assets: '',
     abnormalType: ''
@@ -80,12 +95,36 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
 
   // 初始化可編輯欄位
   useEffect(() => {
-    setEditableFields({
+    const fields = {
       description: workOrder.description,
       assets: workOrder.assets,
       abnormalType: workOrder.abnormalType
-    });
+    };
+    
+    setEditableFields(fields);
+    setOriginalEditableFields(fields);
+    
+    // 初始化時間和人員原始數據
+    setOriginalTime(maintenanceTime);
+    setOriginalStaff(selectedStaff);
   }, [workOrder.description, workOrder.assets, workOrder.abnormalType]);
+
+  // 監控數據變更狀態
+  useEffect(() => {
+    // 檢查人員數據是否變更
+    const isStaffChanged = selectedStaff !== originalStaff;
+    
+    // 檢查時間數據是否變更
+    const isTimeChanged = JSON.stringify(maintenanceTime) !== JSON.stringify(originalTime);
+    
+    // 檢查可編輯欄位是否變更
+    const isFieldsChanged = JSON.stringify(editableFields) !== JSON.stringify(originalEditableFields);
+    
+    // 檢查資源是否變更 (根據情況判斷)
+    
+    // 更新整體數據變更狀態
+    setIsDirty(isStaffChanged || isTimeChanged || isFieldsChanged);
+  }, [selectedStaff, maintenanceTime, editableFields, originalStaff, originalTime, originalEditableFields]);
 
   // 模擬員工列表
   const staffList = [
@@ -246,6 +285,14 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
   const handleSave = () => {
     console.log('Saving work order with editable fields:', editableFields);
     // 實現保存邏輯
+    
+    // 保存成功後，更新原始數據狀態
+    setOriginalEditableFields({...editableFields});
+    setOriginalStaff(selectedStaff);
+    setOriginalTime({...maintenanceTime});
+    
+    // 重置變更狀態
+    setIsDirty(false);
   };
 
   const handleComplete = () => {
@@ -363,7 +410,15 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
           <div className="ml-4 text-xl font-medium truncate">{workOrder.id}</div>
           <div className="flex-1"></div>
           <div className="flex space-x-2">
-            <button onClick={handleSave} className="border border-blue-600 text-blue-600 px-3 py-1 rounded hover:bg-blue-50">
+            <button 
+              onClick={handleSave} 
+              disabled={!isDirty}
+              className={`border px-3 py-1 rounded ${
+                isDirty 
+                  ? "border-blue-600 text-blue-600 hover:bg-blue-50" 
+                  : "border-gray-300 text-gray-300 cursor-not-allowed"
+              }`}
+            >
               {t('save')}
             </button>
             <button onClick={handleComplete} className="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700">
@@ -606,35 +661,22 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
                     <span className="text-red-500 ml-1">*</span>
                   )}
                 </label>
-                <button
-                  className={`w-full border rounded px-3 py-2 text-left flex justify-between items-center focus:ring-1 ${
+                <select
+                  className={`w-full border rounded px-3 py-2 focus:outline-none focus:ring-1 ${
                     selectedStaff 
                       ? 'border-green-500 focus:border-green-500 focus:ring-green-500' 
                       : 'border-gray-300 focus:border-blue-500 focus:ring-blue-500'
                   }`}
-                  onClick={() => setShowStaffSelect(!showStaffSelect)}
+                  value={selectedStaff || ''}
+                  onChange={(e) => setSelectedStaff(e.target.value)}
                 >
-                  <span>{selectedStaff ? `${selectedStaff}` : 'Select staff'}</span>
-                  <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
-                </button>
-                {showStaffSelect && (
-                  <div className="absolute left-0 right-0 mt-1 bg-white border border-gray-300 rounded-md shadow-lg z-10 max-h-48 overflow-auto">
-                    {staffList.map(staff => (
-                      <button
-                        key={staff.id}
-                        className="w-full px-4 py-2 text-left hover:bg-gray-100"
-                        onClick={() => {
-                          setSelectedStaff(staff.id);
-                          setShowStaffSelect(false);
-                        }}
-                      >
-                        {staff.id} - {staff.name}
-                      </button>
-                    ))}
-                  </div>
-                )}
+                  <option value="">Select staff</option>
+                  {staffList.map(staff => (
+                    <option key={staff.id} value={staff.id}>
+                      {staff.id} - {staff.name}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
           </div>

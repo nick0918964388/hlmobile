@@ -6,17 +6,12 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import ActualCheck from '@/components/ActualCheck';
 import WorkReport from '@/components/WorkReport';
 import SubmitModal from '@/components/SubmitModal';
-import api, { PMWorkOrderDetail } from '@/services/api';
+import api, { PMWorkOrderDetail, Manager, CheckItem, LaborResource, MaterialResource, ToolResource } from '@/services/api';
 
 export default function PMDetailPage({ params }: { params: { id: string } }) {
   const router = useRouter();
   const { language } = useLanguage();
   const [activeTab, setActiveTab] = useState<'info' | 'actual' | 'report'>('info');
-  const [showStaffSelect, setShowStaffSelect] = useState({
-    owner: false,
-    lead: false,
-    supervisor: false
-  });
   const [selectedStaff, setSelectedStaff] = useState({
     owner: '',
     lead: '',
@@ -40,6 +35,22 @@ export default function PMDetailPage({ params }: { params: { id: string } }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const [workOrder, setWorkOrder] = useState<PMWorkOrderDetail | null>(null);
+  const [updatedCheckItems, setUpdatedCheckItems] = useState<CheckItem[]>([]);
+  const [updatedResources, setUpdatedResources] = useState<{
+    labor: LaborResource[];
+    materials: MaterialResource[];
+    tools: ToolResource[];
+  } | null>(null);
+  const [isDirty, setIsDirty] = useState<boolean>(false);
+  const [originalStaff, setOriginalStaff] = useState({
+    owner: '',
+    lead: '',
+    supervisor: ''
+  });
+  const [originalTime, setOriginalTime] = useState({
+    startDate: '',
+    endDate: ''
+  });
 
   // 從API獲取工單詳情
   useEffect(() => {
@@ -51,11 +62,31 @@ export default function PMDetailPage({ params }: { params: { id: string } }) {
         
         // 設置人員數據，如果API中有相應的欄位
         if (data) {
-          setSelectedStaff({
+          const staffData = {
             owner: data.owner || '',
             lead: data.lead || '',
             supervisor: data.supervisor || ''
-          });
+          };
+          
+          setSelectedStaff(staffData);
+          // 儲存原始人員數據，用於後續比較
+          setOriginalStaff(staffData);
+          
+          // 設置時間資料，如果API返回中有這些欄位
+          const timeData = {
+            startDate: data.startTime ? formatDateForInput(data.startTime) : '',
+            endDate: data.endTime ? formatDateForInput(data.endTime) : ''
+          };
+          
+          setMaintenanceTime(timeData);
+          // 儲存原始時間數據，用於後續比較
+          setOriginalTime(timeData);
+          
+          // 工單載入後立即檢查actual完成狀態
+          if (data.checkItems && data.checkItems.length > 0) {
+            const isActualComplete = data.checkItems.every(item => item.result !== '');
+            setActualCheckComplete(isActualComplete);
+          }
         }
       } catch (err) {
         console.error('Error fetching work order detail:', err);
@@ -75,13 +106,59 @@ export default function PMDetailPage({ params }: { params: { id: string } }) {
     }
   }, [workOrder, activeTab]);
 
-  // 模擬員工列表
-  const staffList = [
-    { id: 'EMP001', name: 'John Smith' },
-    { id: 'EMP002', name: 'Mary Johnson' },
-    { id: 'EMP003', name: 'David Lee' },
-    { id: 'EMP004', name: 'Sarah Chen' },
-  ];
+  // 使用API獲取管理人員列表
+  const [managerList, setManagerList] = useState<Manager[]>([]);
+  
+  useEffect(() => {
+    const fetchManagerList = async () => {
+      try {
+        const managers = await api.manager.getManagerList();
+        setManagerList(managers);
+      } catch (err) {
+        console.error('Error fetching manager list:', err);
+      }
+    };
+    
+    fetchManagerList();
+  }, []);
+
+  // 時間格式轉換函數 - ISO格式轉換為datetime-local輸入框格式
+  const formatDateForInput = (dateString: string | undefined): string => {
+    if (!dateString) return '';
+    
+    try {
+      const date = new Date(dateString);
+      // 轉換為 YYYY-MM-DDThh:mm 格式，保留原始時區
+      return date.toISOString().slice(0, 16);
+    } catch (e) {
+      console.error('日期格式轉換錯誤:', e);
+      return '';
+    }
+  };
+
+  // 轉換datetime-local輸入框值為ISO格式
+  const convertInputDateToISO = (inputDate: string): string => {
+    if (!inputDate) return '';
+    
+    try {
+      // 處理時區差異，使用戶看到的時間與API發送的時間保持一致
+      // 首先解析輸入的本地時間
+      const localDate = new Date(inputDate);
+      
+      // 獲取當地時區偏移量（分鐘）
+      const offsetMinutes = localDate.getTimezoneOffset();
+      
+      // 創建一個新的日期，保持用戶輸入的時間不變，但正確調整為UTC
+      // 由於getTimezoneOffset()返回的是本地時間與UTC的差異（分鐘），正數表示本地時間落後於UTC
+      // 所以我們需要減去這個值來得到正確的UTC時間
+      const adjustedDate = new Date(localDate.getTime() - offsetMinutes * 60000);
+      
+      return adjustedDate.toISOString();
+    } catch (e) {
+      console.error('日期格式轉換錯誤:', e);
+      return '';
+    }
+  };
 
   // 工單狀態翻譯
   const statusTranslations = {
@@ -252,11 +329,41 @@ export default function PMDetailPage({ params }: { params: { id: string } }) {
         supervisor: selectedStaff.supervisor
       };
       
+      // 添加時間欄位，轉換為ISO格式
+      if (maintenanceTime.startDate) {
+        updateData.startTime = convertInputDateToISO(maintenanceTime.startDate);
+      }
+      
+      if (maintenanceTime.endDate) {
+        updateData.endTime = convertInputDateToISO(maintenanceTime.endDate);
+      }
+      
+      // 如果有更新後的檢查項目，則添加到更新數據中
+      if (updatedCheckItems.length > 0) {
+        updateData.checkItems = updatedCheckItems;
+      }
+      
+      // 如果有更新後的資源數據，則添加到更新數據中
+      if (updatedResources) {
+        updateData.resources = updatedResources;
+      }
+      
+      console.log('Updating work order with data:', updateData);
+      
       // 調用API更新工單
       const updatedWorkOrder = await api.pm.updateWorkOrder(params.id, updateData);
       
       // 更新本地狀態
       setWorkOrder(updatedWorkOrder);
+      
+      // 更新原始數據，用於比較是否有變更
+      setOriginalStaff({...selectedStaff});
+      setOriginalTime({...maintenanceTime});
+      setUpdatedCheckItems([]);
+      setUpdatedResources(null);
+      
+      // 重置變更狀態
+      setIsDirty(false);
       
       // 顯示成功消息
       alert(language === 'zh' ? '工單已成功保存！' : 'Work order saved successfully!');
@@ -336,13 +443,54 @@ export default function PMDetailPage({ params }: { params: { id: string } }) {
            selectedStaff.supervisor;
   };
 
-  const handleActualCheckCompleteChange = (isComplete: boolean) => {
+  // ActualCheck完成狀態變更處理函數，儲存更新後的檢查項目
+  const handleActualCheckCompleteChange = (isComplete: boolean, checkItems?: CheckItem[]) => {
     setActualCheckComplete(isComplete);
+    // 只有當checkItems存在且與當前的updatedCheckItems不同時才更新
+    if (checkItems && JSON.stringify(checkItems) !== JSON.stringify(updatedCheckItems)) {
+      setUpdatedCheckItems(checkItems);
+    }
   };
 
-  const handleResourceCompleteChange = (isComplete: boolean) => {
+  const handleResourceCompleteChange = (isComplete: boolean, resources?: {
+    labor: LaborResource[];
+    materials: MaterialResource[];
+    tools: ToolResource[];
+  }) => {
     setResourceComplete(isComplete);
+    
+    // 如果資源數據存在，則更新
+    if (resources) {
+      setUpdatedResources(resources);
+    }
   };
+
+  // 添加一個useEffect來處理頁面切換時檢查完成狀態
+  useEffect(() => {
+    // 當切換到actual頁簽時，檢查工單的checkItems是否全部完成
+    if (activeTab === 'actual' && workOrder && workOrder.checkItems) {
+      const isComplete = workOrder.checkItems.every(item => item.result !== '');
+      setActualCheckComplete(isComplete);
+    }
+  }, [activeTab, workOrder]);
+
+  // 監控數據變更狀態
+  useEffect(() => {
+    // 檢查人員數據是否變更
+    const isStaffChanged = JSON.stringify(selectedStaff) !== JSON.stringify(originalStaff);
+    
+    // 檢查時間數據是否變更
+    const isTimeChanged = JSON.stringify(maintenanceTime) !== JSON.stringify(originalTime);
+    
+    // 檢查檢查項目是否變更
+    const isCheckItemsChanged = updatedCheckItems.length > 0;
+    
+    // 檢查資源是否變更
+    const isResourcesChanged = !!updatedResources;
+    
+    // 更新整體數據變更狀態
+    setIsDirty(isStaffChanged || isTimeChanged || isCheckItemsChanged || isResourcesChanged);
+  }, [selectedStaff, maintenanceTime, updatedCheckItems, updatedResources, originalStaff, originalTime]);
 
   // 顯示載入中或錯誤狀態
   if (loading) {
@@ -383,11 +531,19 @@ export default function PMDetailPage({ params }: { params: { id: string } }) {
           <div className="ml-4 text-xl font-medium truncate">{workOrder.id}</div>
           <div className="flex-1"></div>
           <div className="flex space-x-2">
-            <button onClick={handleSave} className="border border-blue-600 text-blue-600 px-3 py-1 rounded hover:bg-blue-50">
-              Save
+            <button 
+              onClick={handleSave} 
+              disabled={!isDirty}
+              className={`border px-3 py-1 rounded ${
+                isDirty 
+                  ? "border-blue-600 text-blue-600 hover:bg-blue-50" 
+                  : "border-gray-300 text-gray-300 cursor-not-allowed"
+              }`}
+            >
+              {t('save')}
             </button>
             <button onClick={handleComplete} className="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700">
-              Submit
+              {t('submit')}
             </button>
           </div>
         </div>
@@ -463,9 +619,13 @@ export default function PMDetailPage({ params }: { params: { id: string } }) {
                   <button
                     type="button"
                     onClick={() => {
+                      // 創建一個新的日期對象
                       const now = new Date();
-                      const startDateTime = now.toISOString().slice(0, 16);
-                      const endDateTime = new Date(now.getTime() + 1 * 60 * 60 * 1000).toISOString().slice(0, 16);
+                      // 調整為UTC+8時區，加上8小時
+                      const utc8Now = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+                      const startDateTime = utc8Now.toISOString().slice(0, 16);
+                      // 加1小時
+                      const endDateTime = new Date(utc8Now.getTime() + 1 * 60 * 60 * 1000).toISOString().slice(0, 16);
                       
                       setMaintenanceTime({
                         startDate: startDateTime,
@@ -473,16 +633,20 @@ export default function PMDetailPage({ params }: { params: { id: string } }) {
                       });
                     }}
                     className="flex items-center justify-center bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-full w-8 h-8"
-                    title="Set current time + 1 hour"
+                    title="Set current time + 1 hour (UTC+8)"
                   >
                     <span className="text-xs font-semibold">+1h</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => {
+                      // 創建一個新的日期對象
                       const now = new Date();
-                      const startDateTime = now.toISOString().slice(0, 16);
-                      const endDateTime = new Date(now.getTime() + 2 * 60 * 60 * 1000).toISOString().slice(0, 16);
+                      // 調整為UTC+8時區，加上8小時
+                      const utc8Now = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+                      const startDateTime = utc8Now.toISOString().slice(0, 16);
+                      // 加2小時
+                      const endDateTime = new Date(utc8Now.getTime() + 2 * 60 * 60 * 1000).toISOString().slice(0, 16);
                       
                       setMaintenanceTime({
                         startDate: startDateTime,
@@ -490,16 +654,20 @@ export default function PMDetailPage({ params }: { params: { id: string } }) {
                       });
                     }}
                     className="flex items-center justify-center bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-full w-8 h-8"
-                    title="Set current time + 2 hours"
+                    title="Set current time + 2 hours (UTC+8)"
                   >
                     <span className="text-xs font-semibold">+2h</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => {
+                      // 創建一個新的日期對象
                       const now = new Date();
-                      const startDateTime = now.toISOString().slice(0, 16);
-                      const endDateTime = new Date(now.getTime() + 4 * 60 * 60 * 1000).toISOString().slice(0, 16);
+                      // 調整為UTC+8時區，加上8小時
+                      const utc8Now = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+                      const startDateTime = utc8Now.toISOString().slice(0, 16);
+                      // 加4小時
+                      const endDateTime = new Date(utc8Now.getTime() + 4 * 60 * 60 * 1000).toISOString().slice(0, 16);
                       
                       setMaintenanceTime({
                         startDate: startDateTime,
@@ -507,16 +675,20 @@ export default function PMDetailPage({ params }: { params: { id: string } }) {
                       });
                     }}
                     className="flex items-center justify-center bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-full w-8 h-8"
-                    title="Set current time + 4 hours"
+                    title="Set current time + 4 hours (UTC+8)"
                   >
                     <span className="text-xs font-semibold">+4h</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => {
+                      // 創建一個新的日期對象
                       const now = new Date();
-                      const startDateTime = now.toISOString().slice(0, 16);
-                      const endDateTime = new Date(now.getTime() + 8 * 60 * 60 * 1000).toISOString().slice(0, 16);
+                      // 調整為UTC+8時區，加上8小時
+                      const utc8Now = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+                      const startDateTime = utc8Now.toISOString().slice(0, 16);
+                      // 加8小時
+                      const endDateTime = new Date(utc8Now.getTime() + 8 * 60 * 60 * 1000).toISOString().slice(0, 16);
                       
                       setMaintenanceTime({
                         startDate: startDateTime,
@@ -524,7 +696,7 @@ export default function PMDetailPage({ params }: { params: { id: string } }) {
                       });
                     }}
                     className="flex items-center justify-center bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-full w-8 h-8"
-                    title="Set current time + 8 hours"
+                    title="Set current time + 8 hours (UTC+8)"
                   >
                     <span className="text-xs font-semibold">+8h</span>
                   </button>
@@ -575,35 +747,22 @@ export default function PMDetailPage({ params }: { params: { id: string } }) {
                     <span className="text-red-500 ml-1">*</span>
                   )}
                 </label>
-                <button
-                  className={`w-full border rounded px-3 py-2 text-left flex justify-between items-center focus:ring-1 ${
+                <select
+                  className={`w-full border rounded px-3 py-2 focus:outline-none focus:ring-1 ${
                     selectedStaff.owner 
                       ? 'border-green-500 focus:border-green-500 focus:ring-green-500' 
                       : 'border-gray-300 focus:border-blue-500 focus:ring-blue-500'
                   }`}
-                  onClick={() => setShowStaffSelect(prev => ({ ...prev, owner: true }))}
+                  value={selectedStaff.owner}
+                  onChange={(e) => setSelectedStaff(prev => ({ ...prev, owner: e.target.value }))}
                 >
-                  <span>{selectedStaff.owner ? `${selectedStaff.owner}` : t('selectOwner')}</span>
-                  <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
-                </button>
-                {showStaffSelect.owner && (
-                  <div className="absolute left-0 right-0 mt-1 bg-white border border-gray-300 rounded-md shadow-lg z-10 max-h-48 overflow-auto">
-                    {staffList.map(staff => (
-                      <button
-                        key={staff.id}
-                        className="w-full px-4 py-2 text-left hover:bg-gray-100"
-                        onClick={() => {
-                          setSelectedStaff(prev => ({ ...prev, owner: staff.id }));
-                          setShowStaffSelect(prev => ({ ...prev, owner: false }));
-                        }}
-                      >
-                        {staff.id} - {staff.name}
-                      </button>
-                    ))}
-                  </div>
-                )}
+                  <option value="">{t('selectOwner')}</option>
+                  {managerList.map(staff => (
+                    <option key={staff.id} value={staff.id}>
+                      {staff.id} - {staff.name}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label className="block text-sm text-gray-600 mb-1">
@@ -612,35 +771,22 @@ export default function PMDetailPage({ params }: { params: { id: string } }) {
                     <span className="text-red-500 ml-1">*</span>
                   )}
                 </label>
-                <button
-                  className={`w-full border rounded px-3 py-2 text-left flex justify-between items-center focus:ring-1 ${
+                <select
+                  className={`w-full border rounded px-3 py-2 focus:outline-none focus:ring-1 ${
                     selectedStaff.lead 
                       ? 'border-green-500 focus:border-green-500 focus:ring-green-500' 
                       : 'border-gray-300 focus:border-blue-500 focus:ring-blue-500'
                   }`}
-                  onClick={() => setShowStaffSelect(prev => ({ ...prev, lead: true }))}
+                  value={selectedStaff.lead}
+                  onChange={(e) => setSelectedStaff(prev => ({ ...prev, lead: e.target.value }))}
                 >
-                  <span>{selectedStaff.lead ? `${selectedStaff.lead}` : t('selectLead')}</span>
-                  <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
-                </button>
-                {showStaffSelect.lead && (
-                  <div className="absolute left-0 right-0 mt-1 bg-white border border-gray-300 rounded-md shadow-lg z-10 max-h-48 overflow-auto">
-                    {staffList.map(staff => (
-                      <button
-                        key={staff.id}
-                        className="w-full px-4 py-2 text-left hover:bg-gray-100"
-                        onClick={() => {
-                          setSelectedStaff(prev => ({ ...prev, lead: staff.id }));
-                          setShowStaffSelect(prev => ({ ...prev, lead: false }));
-                        }}
-                      >
-                        {staff.id} - {staff.name}
-                      </button>
-                    ))}
-                  </div>
-                )}
+                  <option value="">{t('selectLead')}</option>
+                  {managerList.map(staff => (
+                    <option key={staff.id} value={staff.id}>
+                      {staff.id} - {staff.name}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label className="block text-sm text-gray-600 mb-1">
@@ -649,41 +795,28 @@ export default function PMDetailPage({ params }: { params: { id: string } }) {
                     <span className="text-red-500 ml-1">*</span>
                   )}
                 </label>
-                <button
-                  className={`w-full border rounded px-3 py-2 text-left flex justify-between items-center focus:ring-1 ${
+                <select
+                  className={`w-full border rounded px-3 py-2 focus:outline-none focus:ring-1 ${
                     selectedStaff.supervisor 
                       ? 'border-green-500 focus:border-green-500 focus:ring-green-500' 
                       : 'border-gray-300 focus:border-blue-500 focus:ring-blue-500'
                   }`}
-                  onClick={() => setShowStaffSelect(prev => ({ ...prev, supervisor: true }))}
+                  value={selectedStaff.supervisor}
+                  onChange={(e) => setSelectedStaff(prev => ({ ...prev, supervisor: e.target.value }))}
                 >
-                  <span>{selectedStaff.supervisor ? `${selectedStaff.supervisor}` : t('selectSupervisor')}</span>
-                  <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
-                </button>
-                {showStaffSelect.supervisor && (
-                  <div className="absolute left-0 right-0 mt-1 bg-white border border-gray-300 rounded-md shadow-lg z-10 max-h-48 overflow-auto">
-                    {staffList.map(staff => (
-                      <button
-                        key={staff.id}
-                        className="w-full px-4 py-2 text-left hover:bg-gray-100"
-                        onClick={() => {
-                          setSelectedStaff(prev => ({ ...prev, supervisor: staff.id }));
-                          setShowStaffSelect(prev => ({ ...prev, supervisor: false }));
-                        }}
-                      >
-                        {staff.id} - {staff.name}
-                      </button>
-                    ))}
-                  </div>
-                )}
+                  <option value="">{t('selectSupervisor')}</option>
+                  {managerList.map(staff => (
+                    <option key={staff.id} value={staff.id}>
+                      {staff.id} - {staff.name}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
           </div>
         )}
 
-        {/* ActualCheck 組件 - 傳遞從API獲取的checkItems */}
+        {/* ActualCheck 組件 */}
         {activeTab === 'actual' && (
           <ActualCheck 
             workOrderId={params.id} 

@@ -1,0 +1,55 @@
+load("nashorn:mozilla_compat.js");
+importPackage(Packages.psdi.server);
+importPackage(Packages.psdi.mbo);
+importPackage(Packages.com.ibm.json.java);
+
+var woSet = MXServer.getMXServer().getMboSet("WORKORDER", userInfo);
+var sqlWhere = "istask = 0 and (woclass = 'WORKORDER' or woclass = 'ACTIVITY') and siteid='HL2' and historyflag =0 and status in ('WAPPR','APPR','WSCH') and parent is null";
+woSet.setWhere(sqlWhere);
+
+var resultList = [];
+var wo = woSet.moveFirst();
+while (wo != null) {
+    var item = {
+        "id": wo.getString("WONUM"),
+        "status": wo.getString("STATUS"),
+        "created": wo.getDate("REPORTDATE") ? dateFormat(wo.getDate("REPORTDATE")) : "",
+        "equipmentId": wo.getString("ASSETNUM"),
+        "equipmentName": wo.getString("asset.description") || "",
+        "location": wo.getString("LOCATION") || "",
+        "description": wo.getString("DESCRIPTION") || "",
+        "pmType": wo.getString("WORKTYPE") || "",
+        "frequency": wo.getString("PM.FREQUENCY") || "",
+        "creator": wo.getString("REPORTEDBY") || "",
+        "systemEngineer": ""
+    };
+    
+    resultList.push(item);
+    wo = woSet.moveNext();
+}
+
+woSet.close();
+
+// 格式化日期函數
+function dateFormat(date) {
+    if (!date) return "";
+    var d = new java.text.SimpleDateFormat("yyyy/MM/dd HH:mm");
+    return d.format(date);
+}
+
+// 獲取系統工程師函數
+function getSystemEngineer(wo) {
+    var leadSet = null;
+    try {
+        leadSet = wo.getMboSet("WOLEAD");
+        if (leadSet.isEmpty()) return "";
+        
+        var lead = leadSet.moveFirst();
+        return lead ? lead.getString("PERSONID") : "";
+    } finally {
+        if (leadSet) leadSet.close();
+    }
+}
+
+// 返回JSON格式的響應
+responseBody = JSON.stringify(resultList);

@@ -1,0 +1,27 @@
+load("nashorn:mozilla_compat.js");
+importPackage(Packages.psdi.server);
+importPackage(Packages.psdi.mbo);
+importPackage(Packages.com.ibm.json.java);
+
+var userSet = MXServer.getMXServer().getMboSet("MAXUSER", userInfo);
+var sqlWhere = "status='作用中' and defsite like 'HL%' and userid <> 'MAXADMIN'";
+userSet.setWhere(sqlWhere);
+
+var resultList = [];
+var user = userSet.moveFirst();
+while (user != null) {
+    var item = {
+        "id": user.getString("userid"),
+        "name": user.getString("PERSON.DISPLAYNAME"),
+        "role": "",
+        "department": user.getString("PERSON.DEPARTMENT")        
+    };
+    
+    resultList.push(item);
+    user = userSet.moveNext();
+}
+
+userSet.close();
+
+// 返回JSON格式的響應
+responseBody = JSON.stringify(resultList);

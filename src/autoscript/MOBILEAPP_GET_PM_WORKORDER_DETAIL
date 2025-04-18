@@ -1,0 +1,252 @@
+load("nashorn:mozilla_compat.js");
+importPackage(Packages.psdi.server);
+importPackage(Packages.psdi.mbo);
+importPackage(Packages.com.ibm.json.java);
+importPackage(java.util);
+importPackage(java.lang);
+importPackage(java.io);
+importPackage(java.text);
+
+// AutoScript 名稱: MOBILEAPP_GET_PM_WORKORDER_DETAIL
+// 描述: 獲取 PM 工單詳情
+// 參數: wonum (工單號碼)
+// 返回: JSON 格式的 PM 工單詳情
+
+// 初始化結果變數
+var resultData = {};
+
+// 從 HTTP 請求中獲取參數
+var wonum = "";
+var paramExists = false;
+
+if (request && request.getQueryParam("wonum")) {
+    wonum = request.getQueryParam("wonum");
+    paramExists = true;
+} else if (params && params.wonum) {
+    wonum = params.wonum;
+    paramExists = true;
+}
+
+// 只有在參數存在的情況下才執行工單查詢
+if (!paramExists) {
+    resultData = {"error": "Missing required parameter: wonum"};
+} else {
+    var woSet = MXServer.getMXServer().getMboSet("WORKORDER", userInfo);
+    woSet.setWhere("wonum = '" + wonum + "'");
+
+    if (woSet.isEmpty()) {
+        woSet.close();
+        resultData = {"error": "Work order not found: " + wonum};
+    } else {
+        var wo = woSet.moveFirst();
+
+        var isoFormat = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'");
+        isoFormat.setTimeZone(TimeZone.getTimeZone("GMT+08:00"));
+        
+        // 解析輸入的ISO日期時間
+        var actstart= wo.getDate("ACTSTART")? isoFormat.format(wo.getDate("ACTSTART")): "";
+        var actfinish= wo.getDate("ACTFINISH")? isoFormat.format(wo.getDate("ACTFINISH")):"";
+
+        // 準備詳情資料
+        resultData = {
+            "id": wo.getString("WONUM"),
+            "status": wo.getString("STATUS"),
+            "description": wo.getString("description"),
+            "openTime": dateFormat(wo.getDate("REPORTDATE")),
+            "creator": wo.getString("REPORTEDBY") || "",
+            "systemCode":  "",
+            "route":  wo.getString("route") || "",
+            "equipmentCode": wo.getString("ASSETNUM") || "",
+            "description": wo.getString("DESCRIPTION") || "",
+            "assets": wo.getString("ASSETNUM") || "",
+            "location": wo.getString("LOCATION") || "",
+            "equipmentType": getAssetType(wo.getString("ASSETNUM")),
+            "reportTime": dateFormat(wo.getDate("REPORTDATE")),
+            "reportPerson": wo.getString("REPORTEDBY") || "",
+            "owner": wo.getString("owner") || "",
+            "lead": wo.getString("lead") || "",
+            "supervisor": wo.getString("supervisor") || "",
+            "startTime": actstart || "",
+            "endTime": actfinish || "",
+            "checkItems": getCheckItems(wo),
+            "resources": getReportItemsAndResources(wo)
+        };
+
+        woSet.close();
+    }
+}
+
+// 格式化日期函數
+function dateFormat(date) {
+    if (!date) return "";
+    var d = new java.text.SimpleDateFormat("yyyy/MM/dd HH:mm");
+    return d.format(date);
+}
+
+// 獲取設備類型
+function getAssetType(assetnum) {
+    if (!assetnum) return "";
+    
+    var assetSet = null;
+    try {
+        assetSet = MXServer.getMXServer().getMboSet("ASSET", userInfo);
+        assetSet.setWhere("assetnum = '" + assetnum + "'");
+        
+        if (assetSet.isEmpty()) return "";
+        
+        var asset = assetSet.moveFirst();
+        return asset.getString("classstructure.classificationid") || "";
+    } finally {
+        if (assetSet) assetSet.close();
+    }
+}
+
+// 獲取檢查項目
+function getCheckItems(wo) {
+    var items = [];
+    var cWoSet = null;
+    var taskSet = null;
+    
+    try {
+        // 判斷是否有route屬性
+        if (wo.isNull("route") === false) {
+            // 有route，處理子工單
+            cWoSet = wo.getMboSet("CHILDREN");
+            if (cWoSet.isEmpty()) return items;
+            
+            var cWo = cWoSet.moveFirst();
+            while (cWo != null) {
+                // 取得每個子工單的作業項目
+                taskSet = cWo.getMboSet("CHILDTASK");
+                var task = taskSet.moveFirst();
+                while (task != null) {
+                    items.push({
+                        "id": task.getString("TASKID"),
+                        "name": task.getString("DESCRIPTION") || "",
+                        "standard": "",
+                        "result": task.getString("WOLO1") || "",
+                        "remarks": task.getString("WOLO3") || "",
+                        "measurements": task.getString("WOLO2") || "",
+                        "assetNum": task.getString("assetnum") || "",  // 設備編號
+                        "wonum": task.getString("wonum") || ""  // 工單編號
+                    });
+                    
+                    task = taskSet.moveNext();
+                }
+                
+                // 移至下一個子工單
+                cWo = cWoSet.moveNext();
+                if (taskSet) taskSet.close();
+            }
+        } else {
+            // 無route，直接取當前工單的作業項目
+            taskSet = wo.getMboSet("CHILDTASK");
+            var task = taskSet.moveFirst();
+            while (task != null) {
+                items.push({
+                    "id": task.getString("TASKID"),
+                    "name": task.getString("DESCRIPTION") || "",
+                    "standard": "",
+                    "result": task.getString("WOLO1") || "",
+                    "remarks": task.getString("WOLO3") || "",
+                    "measurements": task.getString("WOLO2") || "",
+                    "assetNum": task.getString("assetnum") || "",  // 設備編號
+                    "wonum": task.getString("wonum") || ""  // 工單編號
+                });
+                
+                task = taskSet.moveNext();
+            }
+        }
+        
+        return items;
+    } finally {
+        if (cWoSet) cWoSet.close();
+        if (taskSet) taskSet.close();
+    }
+}
+
+// 獲取報告項目與資源
+function getReportItemsAndResources(wo) {
+    var result = {        
+            "labor": [],
+            "materials": [],
+            "tools": []        
+    };
+       
+    var laborSet = null;
+    var materialSet = null;
+    var toolSet = null;
+       
+    try{    
+        // 獲取勞工資源
+        laborSet = wo.getMboSet("SHOWACTUALLABOR");
+        
+        var labor = laborSet.moveFirst();
+        while (labor != null) {
+            result.labor.push({
+                "id": labor.getString("LABTRANSID"),
+                "name": labor.getString("PERSON.displayname"),
+                "laborCode": labor.getString("LABORCODE"),
+                "craftType": labor.getString("CRAFT") || "",
+                "hours": labor.getDouble("REGULARHRS") + labor.getDouble("PREMIUMPAYHOURS"),
+                "startTime": labor.getDate("STARTTIME"),
+                "endTime": labor.getDate("FINISHTIME"),
+                "rate": labor.getDouble("PAYRATE"),
+                "cost": labor.getDouble("LINECOST")
+            });
+            
+            labor = laborSet.moveNext();
+        }
+        
+        // 獲取物料資源
+        materialSet = wo.getMboSet("SHOWACTUALMATERIAL");
+        
+        var material = materialSet.moveFirst();
+        while (material != null) {
+            result.materials.push({
+                "id": material.getString("MATUSETRANSID"),
+                "itemNum": material.getString("ITEMNUM"),
+                "name": material.getString("DESCRIPTION") || "",
+                "description": material.getString("DESCRIPTION") || "",
+                "quantity": material.getDouble("QUANTITY"),
+                "unitCost": material.getDouble("UNITCOST"),
+                "totalCost": material.getDouble("LINECOST"),
+                "location": material.getString("LOCATION") || "",
+                "itemType": material.getString("ITEMTYPE") || "",
+                "lotNum": material.getString("LOTNUM") || ""
+            });
+            
+            material = materialSet.moveNext();
+        }
+        
+        // 獲取工具資源
+        toolSet = wo.getMboSet("SHOWACTUALTOOL");
+        
+        var tool = toolSet.moveFirst();
+        while (tool != null) {
+            result.tools.push({
+                "id": tool.getString("TOOLTRANSID"),
+                "toolCode": tool.getString("ITEMNUM"),
+                "name": tool.getString("ITEM.DESCRIPTION") || "",
+                "description": tool.getString("ITEM.DESCRIPTION") || "",
+                "quantity": tool.getDouble("TOOLQTY"),
+                "hours": tool.getDouble("TOOLHRS"),
+                "rate": 0,
+                "location": tool.getString("LOCATION") || ""
+            });
+            
+            tool = toolSet.moveNext();
+        }
+        
+        return result;
+    } finally {
+        // 關閉所有MboSet
+        if (laborSet) laborSet.close();
+        if (materialSet) materialSet.close();
+        if (toolSet) toolSet.close();
+    }
+}
+
+
+// 返回JSON格式的響應
+responseBody = JSON.stringify(resultData);

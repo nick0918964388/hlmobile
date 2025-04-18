@@ -1,0 +1,52 @@
+load("nashorn:mozilla_compat.js");
+importPackage(Packages.psdi.server);
+importPackage(Packages.psdi.mbo);
+importPackage(Packages.com.ibm.json.java);
+
+var userSet = MXServer.getMXServer().getMboSet("MAXUSER", userInfo);
+userSet.setWhere("personid=:&USERNAME&");
+userSet.reset();
+var user = userSet.getMbo(0);
+var userid = user.getString("userid");
+var personSet = user.getMboSet("PERSON");
+personSet.setWhere("personid=:&PERSONID&");
+personSet.reset();
+var person = personSet.getMbo(0);
+var usergroups = [];
+    
+    // 獲取用戶群組
+    var groupSet = user.getMboSet("GROUPUSER");
+    for (var i = 0; i < groupSet.count(); i++) {
+        var groupMbo = groupSet.getMbo(i);
+        usergroups.push(groupMbo.getString("GROUPNAME"));
+    }
+    
+    // 獲取用戶權限
+    var permissions = [];
+    var sigoptSet = user.getMboSet("GROUPUSER.MAXGROUP.APPLICATIONAUTH");
+    sigoptSet.setWhere("app in ('WOTRACK') and optionname in ('READ','SAVE','INSERT','ROUTEWF')");
+    sigoptSet.reset();
+    for (var j = 0; j < sigoptSet.count(); j++) {
+        var sigoptMbo = sigoptSet.getMbo(j);
+        permissions.push({"app":sigoptMbo.getString("app"),"optionname":sigoptMbo.getString("OPTIONNAME")});
+    }
+    
+    // 建立用戶資訊JSON物件
+    var userinfo = {
+        id: userid,
+        username: userid,
+        name: person.getString("DISPLAYNAME"),
+        email: person.getString("PRIMARYEMAIL"),
+        avatar: "/images/default-avatar.png",
+        role: "",
+        groups: usergroups,
+        department: person.getString("DEPARTMENT"),
+        permissions: permissions
+    };
+
+
+
+
+
+// 返回JSON格式的響應
+responseBody = JSON.stringify(userinfo);

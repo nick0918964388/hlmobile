@@ -1,0 +1,688 @@
+load("nashorn:mozilla_compat.js");
+// MOBILEAPP_UPDATE_PM_WORKORDER
+importPackage(Packages.psdi.mbo);
+importPackage(Packages.psdi.util);
+importPackage(Packages.psdi.server);
+importPackage(java.util);
+importPackage(java.lang);
+importPackage(java.io);
+importPackage(java.text);
+
+var title = "[MOBILEAPP_UPDATE_PM_WORKORDER ]";
+logger = service.getLogger("maximo.tra_wo.wo")
+    logger.info(title + "************Automation Script start ************")
+
+    // 獲取請求參數
+    var wonum = request.getQueryParam("wonum");
+var requestbody = JSON.parse(requestBody);
+logger.info(title + requestBody);
+var workOrderData = requestbody.params.workOrder;
+
+// 驗證參數
+if (!wonum) {
+    //response.setStatus(400);
+    //response.setContentType("application/json");
+    //response.setOutput(JSON.stringify({ error: "工單號碼為必填項" }));
+    responseBody = JSON.stringify({
+        error: "工單號碼為必填項"
+    });
+
+} else {
+
+    var mboSet = null;
+    var wfInstance = null;
+
+    try {
+        // 開始事務
+        mboSet = MXServer.getMXServer().getMboSet("WORKORDER", userInfo);
+
+        // 根據工單號碼查詢工單
+        var sqlWhere = "wonum='" + wonum + "'";
+        mboSet.setWhere(sqlWhere);
+
+        // 獲取工單MBO
+        var workOrderMbo = mboSet.getMbo(0);
+
+        if (workOrderMbo == null) {
+            //response.setStatus(404);
+            //response.setContentType("application/json");
+            //response.setOutput(JSON.stringify({ error: "找不到工單 " + wonum }));
+            responseBody = JSON.stringify({
+                error: "找不到工單 " + wonum
+            });
+        } else {
+
+            // 更新工單資料
+            if (workOrderData.description) {
+                workOrderMbo.setValue("DESCRIPTION", workOrderData.description);
+            }
+
+            if (workOrderData.status) {
+                workOrderMbo.setValue("STATUS", workOrderData.status);
+            }
+
+            if (workOrderData.location) {
+                workOrderMbo.setValue("LOCATION", workOrderData.location);
+            }
+
+            if (workOrderData.lead) {
+                workOrderMbo.setValue("LEAD", workOrderData.lead);
+            }
+            if (workOrderData.owner) {
+                workOrderMbo.setValue("OWNER", workOrderData.owner);
+            }
+            if (workOrderData.supervisor) {
+                workOrderMbo.setValue("supervisor", workOrderData.supervisor);
+            }
+            // 在MOBILEAPP_UPDATE_PM_WORKORDER腳本中添加
+            if (workOrderData.startTime) {
+                var isoFormat = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'");
+                isoFormat.setTimeZone(TimeZone.getTimeZone("GMT+08:00"));
+
+                // 解析輸入的ISO日期時間
+                var startDate = isoFormat.parse(workOrderData.startTime);
+
+                // 使用setDateTime方法直接設置日期時間
+                workOrderMbo.setValue("ACTSTART", startDate, MboConstants.NOVALIDATION_AND_NOACTION);
+            }
+
+            if (workOrderData.endTime) {
+                var isoFormat = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'");
+                isoFormat.setTimeZone(TimeZone.getTimeZone("GMT+08:00"));
+
+                // 解析輸入的ISO日期時間
+                var endDate = isoFormat.parse(workOrderData.endTime);
+
+                // 使用setDateTime方法直接設置日期時間
+                workOrderMbo.setValue("ACTFINISH", endDate, MboConstants.NOVALIDATION_AND_NOACTION);
+            }
+
+            // 更新Task 處理每個檢查項目
+            if (workOrderData.checkItems) {
+                for (var i = 0; i < workOrderData.checkItems.length; i++) {
+                    var checkItem = workOrderData.checkItems[i];
+                    var wonum = checkItem.wonum;
+                    var result = checkItem.result;
+                    var remarks = checkItem.remarks;
+
+                    var taskSet = workOrderMbo.getMboSet("$test123", "WORKORDER", "wonum='" + wonum + "'");
+                    if (!taskSet.isEmpty()) {
+                        var task = taskSet.getMbo(0);
+                        task.setValue("wolo1", result);
+                        task.setValue("wolo2", "");
+                        task.setValue("wolo3", remarks);
+                        logger.info(title + "update task[" + wonum + "] result => " + result + ", remarks => " + remarks);
+                        taskSet.save();
+                        taskSet.close();
+                    }
+                }
+            }
+            
+            // 更新資源資料 (labor、materials、tools)
+            if (workOrderData.resources) {
+                updateWorkOrderResources(workOrderMbo, workOrderData.resources);
+            }
+			
+            // 保存更新
+            mboSet.save();
+
+            var isoFormat = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'");
+            var isoFormat1 = new SimpleDateFormat("yyyy/MM/dd HH:mm");
+            // 構建響應
+            var resultObj = {
+                id: workOrderMbo.getString("wonum"),
+                status: workOrderMbo.getString("STATUS"),
+                description: workOrderMbo.getString("DESCRIPTION"),
+                location: workOrderMbo.getString("LOCATION"),
+                systemEngineer: workOrderMbo.getString("LEAD"),
+                openTime: isoFormat1.format(workOrderMbo.getDate("REPORTDATE")),
+                creator: workOrderMbo.getString("REPORTEDBY") || "",
+                systemCode: "",
+                route: workOrderMbo.getString("route") || "",
+                equipmentCode: workOrderMbo.getString("ASSETNUM") || "",
+                assets: workOrderMbo.getString("ASSETNUM") || "",
+                equipmentType: getAssetType(workOrderMbo.getString("ASSETNUM")),
+                reportTime: isoFormat1.format(workOrderMbo.getDate("REPORTDATE")),
+                reportPerson: workOrderMbo.getString("REPORTEDBY") || "",
+                owner: workOrderMbo.getString("owner") || "",
+                lead: workOrderMbo.getString("lead") || "",
+                supervisor: workOrderMbo.getString("supervisor") || "",
+                startTime: isoFormat.format(workOrderMbo.getDate("actstart")),
+                endTime: isoFormat.format(workOrderMbo.getDate("actfinish")),
+                checkItems: getCheckItems(workOrderMbo),
+                resources: getReportItemsAndResources(workOrderMbo),
+                message: "工單更新成功"
+            };
+
+            // 返回成功結果
+            //response.setStatus(200);
+            //response.setContentType("application/json");
+            //response.setOutput(JSON.stringify(resultObj));
+            responseBody = JSON.stringify(resultObj);
+            logger.info(title + "responseBody-->" + responseBody)
+        }
+    } catch (e) {
+        // 處理錯誤
+        responseBody = JSON.stringify({
+            error: "更新工單時發生錯誤: ",
+            details: e.toString()
+        });
+
+    } finally {
+        // 釋放資源
+        if (mboSet != null) {
+            mboSet.close();
+        }
+    }
+}
+
+// 獲取設備類型
+function getAssetType(assetnum) {
+    if (!assetnum)
+        return "";
+
+    var assetSet = null;
+    try {
+        assetSet = MXServer.getMXServer().getMboSet("ASSET", userInfo);
+        assetSet.setWhere("assetnum = '" + assetnum + "'");
+
+        if (assetSet.isEmpty())
+            return "";
+
+        var asset = assetSet.moveFirst();
+        return asset.getString("classstructure.classificationid") || "";
+    } finally {
+        if (assetSet)
+            assetSet.close();
+    }
+}
+
+// 獲取檢查項目
+function getCheckItems(wo) {
+    var items = [];
+    var cWoSet = null;
+    var taskSet = null;
+
+    try {
+        // 判斷是否有route屬性
+        if (wo.isNull("route") === false) {
+            // 有route，處理子工單
+            cWoSet = wo.getMboSet("CHILDREN");
+            if (cWoSet.isEmpty())
+                return items;
+
+            var cWo = cWoSet.moveFirst();
+            while (cWo != null) {
+                // 取得每個子工單的作業項目
+                taskSet = cWo.getMboSet("CHILDTASK");
+                var task = taskSet.moveFirst();
+                while (task != null) {
+                    items.push({
+                        "id": task.getString("TASKID"),
+                        "name": task.getString("DESCRIPTION") || "",
+                        "standard": "",
+                        "result": task.getString("WOLO1") || "",
+                        "remarks": task.getString("WOLO3") || "",
+                        "measurements": task.getString("WOLO2") || "",
+                        "assetNum": task.getString("assetnum") || "", // 設備編號
+                        "wonum": task.getString("wonum") || "" // 工單編號
+                    });
+
+                    task = taskSet.moveNext();
+                }
+
+                // 移至下一個子工單
+                cWo = cWoSet.moveNext();
+                if (taskSet)
+                    taskSet.close();
+            }
+        } else {
+            // 無route，直接取當前工單的作業項目
+            taskSet = wo.getMboSet("CHILDTASK");
+            var task = taskSet.moveFirst();
+            while (task != null) {
+                items.push({
+                    "id": task.getString("TASKID"),
+                    "name": task.getString("DESCRIPTION") || "",
+                    "standard": "",
+                    "result": task.getString("WOLO1") || "",
+                    "remarks": task.getString("WOLO3") || "",
+                    "measurements": task.getString("WOLO2") || "",
+                    "assetNum": task.getString("assetnum") || "", // 設備編號
+                    "wonum": task.getString("wonum") || "" // 工單編號
+                });
+
+                task = taskSet.moveNext();
+            }
+        }
+
+        return items;
+    } finally {
+        if (cWoSet)
+            cWoSet.close();
+        if (taskSet)
+            taskSet.close();
+    }
+}
+
+// 獲取報告項目與資源
+function getReportItemsAndResources(wo) {
+    var result = {
+        "labor": [],
+        "materials": [],
+        "tools": []
+    };
+
+    var laborSet = null;
+    var materialSet = null;
+    var toolSet = null;
+
+    try {
+        // 獲取勞工資源
+        laborSet = wo.getMboSet("SHOWACTUALLABOR");
+
+        var labor = laborSet.moveFirst();
+        while (labor != null) {
+            result.labor.push({
+                "id": labor.getString("LABTRANSID"),
+                "name": labor.getString("PERSON.displayname"),
+                "laborCode": labor.getString("LABORCODE"),
+                "craftType": labor.getString("CRAFT") || "",
+                "hours": labor.getDouble("REGULARHRS") + labor.getDouble("PREMIUMPAYHOURS"),
+                "startTime": labor.getDate("STARTTIME"),
+                "endTime": labor.getDate("FINISHTIME"),
+                "rate": labor.getDouble("PAYRATE"),
+                "cost": labor.getDouble("LINECOST")
+            });
+
+            labor = laborSet.moveNext();
+        }
+
+        // 獲取物料資源
+        materialSet = wo.getMboSet("SHOWACTUALMATERIAL");
+
+        var material = materialSet.moveFirst();
+        while (material != null) {
+            result.materials.push({
+                "id": material.getString("MATUSETRANSID"),
+                "itemNum": material.getString("ITEMNUM"),
+                "name": material.getString("DESCRIPTION") || "",
+                "description": material.getString("DESCRIPTION") || "",
+                "quantity": material.getDouble("QUANTITY"),
+                "unitCost": material.getDouble("UNITCOST"),
+                "totalCost": material.getDouble("LINECOST"),
+                "location": material.getString("LOCATION") || "",
+                "itemType": material.getString("ITEMTYPE") || "",
+                "lotNum": material.getString("LOTNUM") || ""
+            });
+
+            material = materialSet.moveNext();
+        }
+
+        // 獲取工具資源
+        toolSet = wo.getMboSet("SHOWACTUALTOOL");
+
+        var tool = toolSet.moveFirst();
+        while (tool != null) {
+            result.tools.push({
+                "id": tool.getString("TOOLTRANSID"),
+                "toolCode": tool.getString("ITEMNUM"),
+                "name": tool.getString("ITEM.DESCRIPTION") || "",
+                "description": tool.getString("ITEM.DESCRIPTION") || "",
+                "quantity": tool.getDouble("TOOLQTY"),
+                "hours": tool.getDouble("TOOLHRS"),
+                "rate": 0,
+                "location": tool.getString("LOCATION") || ""
+            });
+
+            tool = toolSet.moveNext();
+        }
+
+        return result;
+    } finally {
+        // 關閉所有MboSet
+        if (laborSet)
+            laborSet.close();
+        if (materialSet)
+            materialSet.close();
+        if (toolSet)
+            toolSet.close();
+    }
+}
+
+// 處理工單資源更新
+function updateWorkOrderResources(workOrderMbo, resources) {
+    try {
+        logger.info(title + "開始更新工單資源");
+        
+        // 1. 更新勞工資源
+        if (resources.labor && resources.labor.length > 0) {
+            updateLaborResources(workOrderMbo, resources.labor);
+        }
+        
+        // 2. 更新材料資源
+        if (resources.materials && resources.materials.length > 0) {
+            updateMaterialResources(workOrderMbo, resources.materials);
+        }
+        
+        // 3. 更新工具資源
+        if (resources.tools && resources.tools.length > 0) {
+            updateToolResources(workOrderMbo, resources.tools);
+        }
+        
+        logger.info(title + "工單資源更新完成");
+    } catch (e) {
+        logger.error(title + "更新工單資源時發生錯誤: " + e);
+        throw e;
+    }
+}
+
+// 執行SQL查詢
+function executeQuery(sql) {
+    var conn = null;
+    var stmt = null;
+    var rs = null;
+    var result = [];
+    
+    try {
+        logger.info(title + "執行SQL查詢: " + sql);
+        conn = MXServer.getMXServer().getDBManager().getConnection();
+        stmt = conn.createStatement();
+        
+        // 執行SQL查詢
+        rs = stmt.executeQuery(sql);
+        
+        // 處理結果集
+        while (rs.next()) {
+            // 處理每行數據
+            var row = {};
+            var metaData = rs.getMetaData();
+            var columnCount = metaData.getColumnCount();
+            
+            for (var i = 1; i <= columnCount; i++) {
+                var columnName = metaData.getColumnName(i);
+                var columnValue = rs.getString(i);
+                row[columnName] = columnValue;
+            }
+            
+            result.push(row);
+        }
+        
+        return result;
+    } catch (e) {
+        logger.error(title + "執行SQL查詢時發生錯誤: " + e);
+        throw e;
+    } finally {
+        if (rs != null) try { rs.close(); } catch (e) {}
+        if (stmt != null) try { stmt.close(); } catch (e) {}
+        if (conn != null) try { conn.close(); } catch (e) {}
+    }
+}
+
+// 執行SQL更新操作
+function executeUpdate(sql) {
+    var conn = null;
+    var stmt = null;
+    var affectedRows = 0;
+    
+    try {
+        logger.info(title + "執行SQL更新: " + sql);
+        conn = MXServer.getMXServer().getDBManager().getConnection();
+        stmt = conn.createStatement();
+        
+        // 執行SQL更新
+        affectedRows = stmt.executeUpdate(sql);
+        logger.info(title + "SQL更新影響的行數: " + affectedRows);
+        
+        return affectedRows;
+    } catch (e) {
+        logger.error(title + "執行SQL更新時發生錯誤: " + e);
+        throw e;
+    } finally {
+        if (stmt != null) try { stmt.close(); } catch (e) {}
+        if (conn != null) try { conn.close(); } catch (e) {}
+    }
+}
+
+// 更新勞工資源
+function updateLaborResources(workOrderMbo, laborResources) {
+    var wonum = workOrderMbo.getString("WONUM");
+    var siteid = workOrderMbo.getString("SITEID");
+    
+    try {
+        logger.info(title + "更新勞工資源，數量: " + laborResources.length + "，工單: " + wonum);
+        
+        // 處理每個勞工資源
+        for (var i = 0; i < laborResources.length; i++) {
+            var labor = laborResources[i];
+            var status = labor.status || 'update'; // 若沒有狀態則預設為更新
+            
+            // 清理ID中的逗號
+            var laborId = String(labor.id || "").replace(/,/g, "");
+            logger.info(title + "處理勞工資源，ID: " + laborId + ", 狀態: " + status);
+            
+            // 1. 刪除資源
+            if (status === 'delete') {
+                logger.info(title + "刪除勞工資源 [ID: " + laborId + "]");
+                
+                if (laborId && laborId.indexOf("L_") !== 0) {
+                    var deleteSql = "DELETE FROM LABTRANS WHERE LABTRANSID = '" + laborId + "'";
+                    executeUpdate(deleteSql);
+                    logger.info(title + "已刪除勞工資源 [ID: " + laborId + "]");
+                }
+                continue; // 跳過其他處理
+            }
+            
+            // 2. 更新或新增資源
+            var isNew = status === 'new' || laborId.indexOf("L_") === 0;
+                
+            if (!isNew && laborId) {
+                // 檢查該ID的記錄是否存在
+                var checkSql = "SELECT LABTRANSID FROM LABTRANS WHERE LABTRANSID = '" + laborId + "'";
+                var existingRecords = executeQuery(checkSql);
+                
+                if (existingRecords.length > 0) {
+                    // 記錄存在，進行更新
+                    var updateSql = "UPDATE LABTRANS SET " +
+                                   "LABORCODE = '" + labor.laborCode + "', " +
+                                   "REGULARHRS = " + labor.hours;
+                    
+                    if (labor.craftType) {
+                        updateSql += ", CRAFT = '" + labor.craftType + "'";
+                    }
+                    
+                    updateSql += " WHERE LABTRANSID = '" + laborId + "'";
+                    
+                    executeUpdate(updateSql);
+                    logger.info(title + "已更新現有勞工資源 [ID: " + laborId + "]");
+                } else {
+                    isNew = true; // 記錄不存在，改為新增
+                }
+            }
+            
+            if (isNew) {
+                // 新增記錄
+                var insertSql = "INSERT INTO LABTRANS (LABTRANSID, LABORCODE, REGULARHRS";
+                var valuesSql = " VALUES (999999999, '" + labor.laborCode + "', " + labor.hours;
+                
+                if (labor.craftType) {
+                    insertSql += ", CRAFT";
+                    valuesSql += ", '" + labor.craftType + "'";
+                }
+                
+                insertSql += ", WONUM, SITEID)";
+                valuesSql += ", '" + wonum + "', '" + siteid + "')";
+                
+                executeUpdate(insertSql + valuesSql);
+                logger.info(title + "已添加新勞工資源 [固定ID: 999999999]");
+            }
+        }
+    } catch (e) {
+        logger.error(title + "更新勞工資源時發生錯誤: " + e);
+        throw e;
+    }
+}
+
+// 更新材料資源
+function updateMaterialResources(workOrderMbo, materialResources) {
+    var wonum = workOrderMbo.getString("WONUM");
+    var siteid = workOrderMbo.getString("SITEID");
+    
+    try {
+        logger.info(title + "更新材料資源，數量: " + materialResources.length + "，工單: " + wonum);
+        
+        // 處理每個材料資源
+        for (var i = 0; i < materialResources.length; i++) {
+            var material = materialResources[i];
+            var status = material.status || 'update'; // 若沒有狀態則預設為更新
+            
+            // 清理ID中的逗號
+            var materialId = String(material.id || "").replace(/,/g, "");
+            logger.info(title + "處理材料資源，ID: " + materialId + ", 狀態: " + status);
+            
+            // 1. 刪除資源
+            if (status === 'delete') {
+                logger.info(title + "刪除材料資源 [ID: " + materialId + "]");
+                
+                if (materialId && materialId.indexOf("M_") !== 0) {
+                    var deleteSql = "DELETE FROM MATUSETRANS WHERE MATUSETRANSID = '" + materialId + "'";
+                    executeUpdate(deleteSql);
+                    logger.info(title + "已刪除材料資源 [ID: " + materialId + "]");
+                }
+                continue; // 跳過其他處理
+            }
+            
+            // 2. 更新或新增資源
+            var isNew = status === 'new' || materialId.indexOf("M_") === 0;
+                
+            if (!isNew && materialId) {
+                // 檢查該ID的記錄是否存在
+                var checkSql = "SELECT MATUSETRANSID FROM MATUSETRANS WHERE MATUSETRANSID = '" + materialId + "'";
+                var existingRecords = executeQuery(checkSql);
+                
+                if (existingRecords.length > 0) {
+                    // 記錄存在，進行更新
+                    var updateSql = "UPDATE MATUSETRANS SET " +
+                                   "ITEMNUM = '" + material.itemNum + "', " +
+                                   "DESCRIPTION = '" + (material.name || material.description).replace(/'/g, "''") + "', " +
+                                   "QUANTITY = " + material.quantity;
+                    
+                    if (material.unitCost) {
+                        updateSql += ", UNITCOST = " + material.unitCost;
+                    }
+                    
+                    updateSql += " WHERE MATUSETRANSID = '" + materialId + "'";
+                    
+                    executeUpdate(updateSql);
+                    logger.info(title + "已更新現有材料資源 [ID: " + materialId + "]");
+                } else {
+                    isNew = true; // 記錄不存在，改為新增
+                }
+            }
+            
+            if (isNew) {
+                // 新增記錄
+                var insertSql = "INSERT INTO MATUSETRANS (MATUSETRANSID, ITEMNUM, DESCRIPTION, QUANTITY";
+                var valuesSql = " VALUES (999999999, '" + material.itemNum + "', '" + 
+                              (material.name || material.description).replace(/'/g, "''") + "', " + 
+                              material.quantity;
+                
+                if (material.unitCost) {
+                    insertSql += ", UNITCOST";
+                    valuesSql += ", " + material.unitCost;
+                }
+                
+                insertSql += ", WONUM, SITEID)";
+                valuesSql += ", '" + wonum + "', '" + siteid + "')";
+                
+                executeUpdate(insertSql + valuesSql);
+                logger.info(title + "已添加新材料資源 [固定ID: 999999999]");
+            }
+        }
+    } catch (e) {
+        logger.error(title + "更新材料資源時發生錯誤: " + e);
+        throw e;
+    }
+}
+
+// 更新工具資源
+function updateToolResources(workOrderMbo, toolResources) {
+    var wonum = workOrderMbo.getString("WONUM");
+    var siteid = workOrderMbo.getString("SITEID");
+    
+    try {
+        logger.info(title + "更新工具資源，數量: " + toolResources.length + "，工單: " + wonum);
+        
+        // 處理每個工具資源
+        for (var i = 0; i < toolResources.length; i++) {
+            var tool = toolResources[i];
+            var status = tool.status || 'update'; // 若沒有狀態則預設為更新
+            
+            // 清理ID中的逗號
+            var toolId = String(tool.id || "").replace(/,/g, "");
+            logger.info(title + "處理工具資源，ID: " + toolId + ", 狀態: " + status);
+            
+            // 1. 刪除資源
+            if (status === 'delete') {
+                logger.info(title + "刪除工具資源 [ID: " + toolId + "]");
+                
+                if (toolId && toolId.indexOf("T_") !== 0) {
+                    var deleteSql = "DELETE FROM TOOLTRANS WHERE TOOLTRANSID = '" + toolId + "'";
+                    executeUpdate(deleteSql);
+                    logger.info(title + "已刪除工具資源 [ID: " + toolId + "]");
+                }
+                continue; // 跳過其他處理
+            }
+            
+            // 2. 更新或新增資源
+            var isNew = status === 'new' || toolId.indexOf("T_") === 0;
+                
+            if (!isNew && toolId) {
+                // 檢查該ID的記錄是否存在
+                var checkSql = "SELECT TOOLTRANSID FROM TOOLTRANS WHERE TOOLTRANSID = '" + toolId + "'";
+                var existingRecords = executeQuery(checkSql);
+                
+                if (existingRecords.length > 0) {
+                    // 記錄存在，進行更新
+                    var updateSql = "UPDATE TOOLTRANS SET " +
+                                   "ITEMNUM = '" + tool.toolCode + "', " +
+                                   "DESCRIPTION = '" + (tool.name || tool.description).replace(/'/g, "''") + "', " +
+                                   "TOOLQTY = " + tool.quantity;
+                    
+                    if (tool.hours) {
+                        updateSql += ", TOOLHRS = " + tool.hours;
+                    }
+                    
+                    updateSql += " WHERE TOOLTRANSID = '" + toolId + "'";
+                    
+                    executeUpdate(updateSql);
+                    logger.info(title + "已更新現有工具資源 [ID: " + toolId + "]");
+                } else {
+                    isNew = true; // 記錄不存在，改為新增
+                }
+            }
+            
+            if (isNew) {
+                // 新增記錄
+                var insertSql = "INSERT INTO TOOLTRANS (TOOLTRANSID, ITEMNUM, DESCRIPTION, TOOLQTY";
+                var valuesSql = " VALUES (999999999, '" + tool.toolCode + "', '" + 
+                              (tool.name || tool.description).replace(/'/g, "''") + "', " + 
+                              tool.quantity;
+                
+                if (tool.hours) {
+                    insertSql += ", TOOLHRS";
+                    valuesSql += ", " + tool.hours;
+                }
+                
+                insertSql += ", WONUM, SITEID)";
+                valuesSql += ", '" + wonum + "', '" + siteid + "')";
+                
+                executeUpdate(insertSql + valuesSql);
+                logger.info(title + "已添加新工具資源 [固定ID: 999999999]");
+            }
+        }
+    } catch (e) {
+        logger.error(title + "更新工具資源時發生錯誤: " + e);
+        throw e;
+    }
+}

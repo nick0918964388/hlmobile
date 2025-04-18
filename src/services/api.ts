@@ -33,6 +33,8 @@ export interface PMWorkOrderDetail {
   owner?: string;
   lead?: string;
   supervisor?: string;
+  startTime?: string;  // 維護開始時間
+  endTime?: string;    // 維護結束時間
   checkItems: CheckItem[];
   reportItems: ReportItem[];
   // 資源項目
@@ -103,6 +105,7 @@ export interface CheckItem {
   result: string;
   remarks: string;
   assetNum?: string;
+  wonum?: string;
 }
 
 // 定義報告項目介面
@@ -124,6 +127,7 @@ export interface LaborResource {
   endTime?: string;
   rate?: number;
   cost?: number;
+  status?: 'new' | 'update' | 'delete'; // 資源狀態: 新增、更新、刪除
 }
 
 // 定義物料資源介面
@@ -138,6 +142,7 @@ export interface MaterialResource {
   location?: string;
   itemType?: string;
   lotNum?: string;
+  status?: 'new' | 'update' | 'delete'; // 資源狀態: 新增、更新、刪除
 }
 
 // 定義工具資源介面
@@ -150,6 +155,7 @@ export interface ToolResource {
   hours?: number;
   rate?: number;
   location?: string;
+  status?: 'new' | 'update' | 'delete'; // 資源狀態: 新增、更新、刪除
 }
 
 // 定義設備選項介面
@@ -163,6 +169,12 @@ export interface EquipmentOption {
 export interface Staff {
   id: string;
   name: string;
+}
+
+// 定義管理人員介面
+export interface Manager extends Staff {
+  role?: string;
+  department?: string;
 }
 
 // 定義狀態翻譯介面
@@ -311,6 +323,29 @@ const apiRequest = async <T>(
 
 // 模擬API回應延遲
 const simulateApiDelay = (ms: number = 300) => new Promise(resolve => setTimeout(resolve, ms));
+
+// 導出 apiRequest 讓其他模組可以使用
+export { apiRequest };
+
+// 數據更新相關API功能
+export const dataApi = {
+  // 更新資料到伺服器
+  updateData: async <T>(
+    endpoint: string,
+    data: T
+  ): Promise<T> => {
+    // 判斷是否使用模擬資料
+    if (process.env.NEXT_PUBLIC_USE_MOCK_DATA === 'true') {
+      await simulateApiDelay(1000);
+      console.log('模擬更新資料到伺服器:', endpoint, data);
+      return data;
+    }
+    
+    // 使用實際API
+    const url = buildApiUrl(endpoint);
+    return apiRequest<T>(url, 'POST', data);
+  }
+};
 
 // PM相關API功能
 export const pmApi = {
@@ -482,6 +517,46 @@ export const pmApi = {
     // 使用實際API
     const url = buildApiUrl('MOBILEAPP_GET_STAFF_LIST');
     return apiRequest<Staff[]>(url);
+  },
+  
+  // 獲取可擔任owner、lead、supervisor的人員清單
+  getManagerList: async (): Promise<Manager[]> => {
+    // 判斷是否使用模擬資料
+    if (process.env.NEXT_PUBLIC_USE_MOCK_DATA === 'true') {
+      await simulateApiDelay();
+      
+      // 模擬管理人員資料
+      return [
+        {
+          id: 'M001',
+          name: '張三',
+          role: '主管',
+          department: '維修部'
+        },
+        {
+          id: 'M002',
+          name: '李四',
+          role: '工程師',
+          department: '工程部'
+        },
+        {
+          id: 'M003',
+          name: '王五',
+          role: '技術主管',
+          department: '技術部'
+        },
+        {
+          id: 'M004',
+          name: '趙六',
+          role: '部門經理',
+          department: '維修部'
+        }
+      ];
+    }
+    
+    // 使用實際API
+    const url = buildApiUrl('MOBILEAPP_GET_MANAGER_LIST');
+    return apiRequest<Manager[]>(url);
   },
   
   // 更新PM工單
@@ -925,6 +1000,13 @@ export default {
       // 使用實際API
       const url = buildApiUrl('MOBILEAPP_GET_SYSTEM_HEALTH');
       return apiRequest<SystemHealth>(url);
+    }
+  },
+  // 新增管理人員API
+  manager: {
+    // 獲取可擔任owner、lead、supervisor的人員清單
+    getManagerList: async (): Promise<Manager[]> => {
+      return pmApi.getManagerList();
     }
   }
 }; 
