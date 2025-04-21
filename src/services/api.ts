@@ -878,8 +878,8 @@ export const cmApi = {
     }
     
     // 使用實際API
-    const url = buildApiUrl('MOBILEAPP_SAVE_CM_WORKORDER');
-    return apiRequest<CMWorkOrderDetail>(url, 'POST', workOrderData);
+    const url = buildApiUrl('MOBILEAPP_UPDATE_PM_WORKORDER', { wonum: workOrderData.id });
+    return apiRequest<CMWorkOrderDetail>(url, 'POST', { params: { workOrder: workOrderData } });
   },
   
   // 保存CM工單單個欄位

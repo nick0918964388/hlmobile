@@ -29,10 +29,8 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
     lead: '',
     supervisor: ''
   });
-  const [maintenanceTime, setMaintenanceTime] = useState({
-    startDate: '',
-    endDate: ''
-  });
+  const [startTime, setStartTime] = useState('');
+  const [endTime, setEndTime] = useState('');
   
   // 添加數據變更狀態
   const [isDirty, setIsDirty] = useState<boolean>(false);
@@ -46,10 +44,8 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
     lead: '',
     supervisor: ''
   });
-  const [originalTime, setOriginalTime] = useState({
-    startDate: '',
-    endDate: ''
-  });
+  const [originalStartTime, setOriginalStartTime] = useState('');
+  const [originalEndTime, setOriginalEndTime] = useState('');
   
   // 可編輯欄位狀態
   const [editableFields, setEditableFields] = useState({
@@ -90,6 +86,20 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
     'Component Damage'
   ];
 
+  // 時間格式轉換函數 - ISO格式轉換為datetime-local輸入框格式
+  const formatDateForInput = (dateString: string | undefined): string => {
+    if (!dateString) return '';
+    
+    try {
+      const date = new Date(dateString);
+      // 轉換為 YYYY-MM-DDThh:mm 格式，保留原始時區
+      return date.toISOString().slice(0, 16);
+    } catch (e) {
+      console.error('日期格式轉換錯誤:', e);
+      return '';
+    }
+  };
+
   // 從API獲取工單詳情數據
   useEffect(() => {
     const fetchWorkOrderDetails = async () => {
@@ -122,11 +132,16 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
           
           // 設置維護時間
           if (response.startTime || response.endTime) {
-            const startDate = response.startTime || '';
-            const endDate = response.endTime || '';
+            const newStartTime = formatDateForInput(response.startTime) || '';
+            const newEndTime = formatDateForInput(response.endTime) || '';
             
-            setMaintenanceTime({ startDate, endDate });
-            setOriginalTime({ startDate, endDate });
+            console.log("設置開始時間:", response.startTime, "->", newStartTime);
+            console.log("設置結束時間:", response.endTime, "->", newEndTime);
+            
+            setStartTime(newStartTime);
+            setEndTime(newEndTime);
+            setOriginalStartTime(newStartTime);
+            setOriginalEndTime(newEndTime);
           }
           
           // 設置選中的負責人員
@@ -208,7 +223,7 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
     const isStaffChanged = JSON.stringify(selectedStaff) !== JSON.stringify(originalStaff);
     
     // 檢查時間數據是否變更
-    const isTimeChanged = JSON.stringify(maintenanceTime) !== JSON.stringify(originalTime);
+    const isTimeChanged = startTime !== originalStartTime || endTime !== originalEndTime;
     
     // 檢查可編輯欄位是否變更
     const isFieldsChanged = JSON.stringify(editableFields) !== JSON.stringify(originalEditableFields);
@@ -217,7 +232,7 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
     
     // 更新整體數據變更狀態
     setIsDirty(isStaffChanged || isTimeChanged || isFieldsChanged);
-  }, [selectedStaff, maintenanceTime, editableFields, originalStaff, originalTime, originalEditableFields]);
+  }, [selectedStaff, startTime, endTime, editableFields, originalStaff, originalStartTime, originalEndTime, originalEditableFields]);
 
   // 工單狀態翻譯
   const statusTranslations = {
@@ -394,13 +409,38 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
   // 更新保存功能以使用API
   const handleSave = async () => {
     try {
+      // 格式化日期時間為ISO標準格式
+      const formatDateToISO = (dateTimeStr: string): string => {
+        if (!dateTimeStr) return '';
+        
+        try {
+          // 處理時區差異，使用戶看到的時間與API發送的時間保持一致
+          // 首先解析輸入的本地時間
+          const localDate = new Date(dateTimeStr);
+          
+          // 獲取當地時區偏移量（分鐘）
+          const offsetMinutes = localDate.getTimezoneOffset();
+          
+          // 創建一個新的日期，保持用戶輸入的時間不變，但正確調整為UTC
+          // 由於getTimezoneOffset()返回的是本地時間與UTC的差異（分鐘），正數表示本地時間落後於UTC
+          // 所以我們需要減去這個值來得到正確的UTC時間
+          const adjustedDate = new Date(localDate.getTime() - offsetMinutes * 60000);
+          
+          return adjustedDate.toISOString();
+        } catch (e) {
+          console.error('日期格式轉換錯誤:', e);
+          return '';
+        }
+      };
+      
       // 準備要保存的數據
       const saveData = {
         id: params.id,
         description: editableFields.description,
         assets: editableFields.assets,
         abnormalType: editableFields.abnormalType,
-        maintenanceTime: maintenanceTime,
+        startTime: formatDateToISO(startTime),
+        endTime: formatDateToISO(endTime),
         owner: selectedStaff.owner,
         lead: selectedStaff.lead,
         supervisor: selectedStaff.supervisor
@@ -412,7 +452,8 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
       // 保存成功後，更新原始數據狀態
       setOriginalEditableFields({...editableFields});
       setOriginalStaff({...selectedStaff});
-      setOriginalTime({...maintenanceTime});
+      setOriginalStartTime(startTime);
+      setOriginalEndTime(endTime);
       
       // 重置變更狀態
       setIsDirty(false);
@@ -474,8 +515,8 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
 
   // 檢查是否所有必填欄位都已填寫
   const isMaintenanceInfoComplete = () => {
-    return maintenanceTime.startDate && 
-           maintenanceTime.endDate && 
+    return startTime && 
+           endTime && 
            selectedStaff.owner &&
            selectedStaff.lead &&
            selectedStaff.supervisor;
@@ -509,7 +550,8 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
           [field]: editableFields[field]
         }) !== JSON.stringify(editableFields) ||
         JSON.stringify(selectedStaff) !== JSON.stringify(originalStaff) ||
-        JSON.stringify(maintenanceTime) !== JSON.stringify(originalTime);
+        JSON.stringify(startTime) !== JSON.stringify(originalStartTime) ||
+        JSON.stringify(endTime) !== JSON.stringify(originalEndTime);
       
       setIsDirty(hasOtherChanges);
     } catch (error) {
@@ -856,41 +898,123 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
 
             {/* 維修時間和負責人員 */}
             <div className="p-4 space-y-4 border-t">
+              {/* 時間快速設置按鈕 */}
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-sm text-gray-600 font-medium">{language === 'zh' ? '快速時間設置:' : 'Quick Time Set:'}</div>
+                <div className="flex space-x-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      // 創建一個新的日期對象
+                      const now = new Date();
+                      // 調整為UTC+8時區，加上8小時
+                      const utc8Now = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+                      const startTimeValue = utc8Now.toISOString().slice(0, 16);
+                      // 加1小時
+                      const endTimeValue = new Date(utc8Now.getTime() + 1 * 60 * 60 * 1000).toISOString().slice(0, 16);
+                      
+                      setStartTime(startTimeValue);
+                      setEndTime(endTimeValue);
+                    }}
+                    className="flex items-center justify-center bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-full w-8 h-8"
+                    title={language === 'zh' ? '設置為當前時間 + 1小時 (UTC+8)' : 'Set current time + 1 hour (UTC+8)'}
+                  >
+                    <span className="text-xs font-semibold">+1h</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      // 創建一個新的日期對象
+                      const now = new Date();
+                      // 調整為UTC+8時區，加上8小時
+                      const utc8Now = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+                      const startTimeValue = utc8Now.toISOString().slice(0, 16);
+                      // 加2小時
+                      const endTimeValue = new Date(utc8Now.getTime() + 2 * 60 * 60 * 1000).toISOString().slice(0, 16);
+                      
+                      setStartTime(startTimeValue);
+                      setEndTime(endTimeValue);
+                    }}
+                    className="flex items-center justify-center bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-full w-8 h-8"
+                    title={language === 'zh' ? '設置為當前時間 + 2小時 (UTC+8)' : 'Set current time + 2 hours (UTC+8)'}
+                  >
+                    <span className="text-xs font-semibold">+2h</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      // 創建一個新的日期對象
+                      const now = new Date();
+                      // 調整為UTC+8時區，加上8小時
+                      const utc8Now = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+                      const startTimeValue = utc8Now.toISOString().slice(0, 16);
+                      // 加4小時
+                      const endTimeValue = new Date(utc8Now.getTime() + 4 * 60 * 60 * 1000).toISOString().slice(0, 16);
+                      
+                      setStartTime(startTimeValue);
+                      setEndTime(endTimeValue);
+                    }}
+                    className="flex items-center justify-center bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-full w-8 h-8"
+                    title={language === 'zh' ? '設置為當前時間 + 4小時 (UTC+8)' : 'Set current time + 4 hours (UTC+8)'}
+                  >
+                    <span className="text-xs font-semibold">+4h</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      // 創建一個新的日期對象
+                      const now = new Date();
+                      // 調整為UTC+8時區，加上8小時
+                      const utc8Now = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+                      const startTimeValue = utc8Now.toISOString().slice(0, 16);
+                      // 加8小時
+                      const endTimeValue = new Date(utc8Now.getTime() + 8 * 60 * 60 * 1000).toISOString().slice(0, 16);
+                      
+                      setStartTime(startTimeValue);
+                      setEndTime(endTimeValue);
+                    }}
+                    className="flex items-center justify-center bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-full w-8 h-8"
+                    title={language === 'zh' ? '設置為當前時間 + 8小時 (UTC+8)' : 'Set current time + 8 hours (UTC+8)'}
+                  >
+                    <span className="text-xs font-semibold">+8h</span>
+                  </button>
+                </div>
+              </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm text-gray-600 mb-1">
                     {t('startTime')}
-                    {!maintenanceTime.startDate && (
+                    {!startTime && (
                       <span className="text-red-500 ml-1">*</span>
                     )}
                   </label>
                   <input
                     type="datetime-local"
                     className={`w-full border rounded px-3 py-2 focus:ring-1 ${
-                      maintenanceTime.startDate 
+                      startTime 
                         ? 'border-green-500 focus:border-green-500 focus:ring-green-500' 
                         : 'border-gray-300 focus:border-blue-500 focus:ring-blue-500'
                     }`}
-                    value={maintenanceTime.startDate}
-                    onChange={(e) => setMaintenanceTime(prev => ({ ...prev, startDate: e.target.value }))}
+                    value={startTime}
+                    onChange={(e) => setStartTime(e.target.value)}
                   />
                 </div>
                 <div>
                   <label className="block text-sm text-gray-600 mb-1">
                     {t('endTime')}
-                    {!maintenanceTime.endDate && (
+                    {!endTime && (
                       <span className="text-red-500 ml-1">*</span>
                     )}
                   </label>
                   <input
                     type="datetime-local"
                     className={`w-full border rounded px-3 py-2 focus:ring-1 ${
-                      maintenanceTime.endDate 
+                      endTime 
                         ? 'border-green-500 focus:border-green-500 focus:ring-green-500' 
                         : 'border-gray-300 focus:border-blue-500 focus:ring-blue-500'
                     }`}
-                    value={maintenanceTime.endDate}
-                    onChange={(e) => setMaintenanceTime(prev => ({ ...prev, endDate: e.target.value }))}
+                    value={endTime}
+                    onChange={(e) => setEndTime(e.target.value)}
                   />
                 </div>
               </div>
