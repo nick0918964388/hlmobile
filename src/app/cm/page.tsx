@@ -5,7 +5,8 @@ import Sidebar from '@/components/Sidebar';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/contexts/LanguageContext';
 import CMActual from '@/components/CMActual';
-import api, { CMWorkOrder, EquipmentOption } from '@/services/api';
+import api, { CMWorkOrder, EquipmentOption, AbnormalMaintenanceOptions, Manager } from '@/services/api';
+import { getManagerList } from '@/services/api';
 import { SkeletonList } from '@/components/Skeleton';
 
 export default function CMPage() {
@@ -34,8 +35,18 @@ export default function CMPage() {
     location: '',
     description: '',
     abnormalType: '',
-    maintenanceType: ''
+    maintenanceType: '',
+    owner: ''
   });
+  
+  // Autocomplete相關狀態
+  const [showOptions, setShowOptions] = useState(false);
+  const [searchInput, setSearchInput] = useState('');
+  const [filteredOptions, setFilteredOptions] = useState<EquipmentOption[]>([]);
+  const autocompleteRef = useRef<HTMLDivElement>(null);
+  
+  // 管理人員列表
+  const [managerList, setManagerList] = useState<Manager[]>([]);
   
   // 使用API服務獲取CM工單列表
   useEffect(() => {
@@ -59,42 +70,92 @@ export default function CMPage() {
   useEffect(() => {
     const fetchEquipmentOptions = async () => {
       try {
+        setLoading(true);
+        // 使用API服務獲取設備選項
         const data = await api.cm.getEquipmentOptions();
+        console.log("從API獲取設備選項:", data);
         setEquipmentOptions(data);
+        setLoading(false);
       } catch (err) {
         console.error('Error fetching equipment options:', err);
+        // 發生錯誤時使用備用的模擬數據
+        const fallbackOptions = [
+          { id: 'P1THC-ZERO-C01', name: 'CUP ZEROC01 Zero Generator', location: 'F15/00203W02' },
+          { id: 'P3PLUMP-P-LOADZNG03A', name: 'Pump XXXXXXXX', location: 'F15/00203W02' },
+          { id: 'P4AIR-COMP-01', name: 'Air Compressor 01', location: 'F15/00204W01' }
+        ];
+        console.log("使用備用設備選項:", fallbackOptions);
+        setEquipmentOptions(fallbackOptions);
+        setLoading(false);
       }
     };
 
     fetchEquipmentOptions();
   }, []);
   
-  // 使用API服務獲取異常類型選項
+  // 使用API服務獲取異常類型和維護類型選項
   useEffect(() => {
-    const fetchAbnormalOptions = async () => {
+    const fetchOptionsData = async () => {
       try {
-        const data = await api.cm.getAbnormalOptions();
-        setAbnormalOptions(data);
+        setLoading(true);
+        // 使用新API服務同時獲取異常類型和維護類型選項
+        const data = await api.cm.getAbnormalAndMaintenanceOptions();
+        console.log("從API獲取異常和維護類型選項:", data);
+        setAbnormalOptions(data.abnormalOptions);
+        setMaintenanceOptions(data.maintenanceOptions);
+        setLoading(false);
       } catch (err) {
-        console.error('Error fetching abnormal options:', err);
+        console.error('Error fetching abnormal and maintenance options:', err);
+        // 發生錯誤時使用備用的模擬數據
+        const fallbackData = {
+          abnormalOptions: [
+            'Efficiency Decrease',
+            'Failure Shutdown',
+            'Abnormal Vibration',
+            'Abnormal Noise',
+            'Leakage',
+            'Component Damage'
+          ],
+          maintenanceOptions: [
+            'Emergency Equipment Repair',
+            'Preventive Maintenance',
+            'Corrective Maintenance',
+            'Predictive Maintenance',
+            'Routine Maintenance'
+          ]
+        };
+        console.log("使用備用異常和維護類型選項:", fallbackData);
+        setAbnormalOptions(fallbackData.abnormalOptions);
+        setMaintenanceOptions(fallbackData.maintenanceOptions);
+        setLoading(false);
       }
     };
 
-    fetchAbnormalOptions();
+    fetchOptionsData();
   }, []);
-  
-  // 使用API服務獲取維護類型選項
+
+  // 獲取管理人員列表
   useEffect(() => {
-    const fetchMaintenanceOptions = async () => {
+    const fetchManagerList = async () => {
       try {
-        const data = await api.cm.getMaintenanceOptions();
-        setMaintenanceOptions(data);
-      } catch (err) {
-        console.error('Error fetching maintenance options:', err);
+        console.log("開始獲取管理人員列表...");
+        const managers = await getManagerList();
+        console.log("管理人員列表獲取成功:", managers);
+        setManagerList(managers);
+      } catch (error) {
+        console.error("獲取管理人員列表失敗:", error);
+        // 使用備用的模擬數據
+        const fallbackManagers = [
+          { id: 'M001', name: '張三', role: '主管', department: '維修部' },
+          { id: 'M002', name: '李四', role: '工程師', department: '工程部' },
+          { id: 'M003', name: '王五', role: '技術主管', department: '技術部' }
+        ];
+        console.log("使用備用管理人員列表:", fallbackManagers);
+        setManagerList(fallbackManagers);
       }
     };
-
-    fetchMaintenanceOptions();
+    
+    fetchManagerList();
   }, []);
 
   // 篩選顯示的工單
@@ -197,6 +258,18 @@ export default function CMPage() {
     error: {
       zh: '載入失敗',
       en: 'Failed to load'
+    },
+    failureDescription: {
+      zh: '故障描述',
+      en: 'Failure Description'
+    },
+    owner: {
+      zh: '負責人',
+      en: 'Owner'
+    },
+    selectOwner: {
+      zh: '選擇負責人',
+      en: 'Select Owner'
     }
   };
 
@@ -209,7 +282,7 @@ export default function CMPage() {
     router.push(`/cm/${recordId}`);
   };
 
-  // 點擊主內容區域時關閉側邊選單
+  // 點擊主內容區域時關閉側邊選單和自動完成選項
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (
@@ -219,34 +292,59 @@ export default function CMPage() {
       ) {
         setShowSidebar(false);
       }
+      
+      // 點擊自動完成區域外時關閉選項列表
+      if (
+        showOptions && 
+        autocompleteRef.current && 
+        !autocompleteRef.current.contains(event.target as Node)
+      ) {
+        setShowOptions(false);
+      }
     };
 
     document.addEventListener('mousedown', handleClickOutside);
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [showSidebar]);
+  }, [showSidebar, showOptions]);
 
   // 處理設備選擇，自動填充位置
-  const handleEquipmentChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const selectedId = e.target.value;
-    const selectedEquipment = equipmentOptions.find(eq => eq.id === selectedId);
+  const handleEquipmentChange = (selectedEquipment: EquipmentOption) => {
+    setFormData({
+      ...formData,
+      equipmentId: selectedEquipment.id,
+      equipmentName: selectedEquipment.name,
+      location: selectedEquipment.location,
+      maintenanceType: maintenanceOptions[0] || '緊急設備修復' // 預設維修類型
+    });
+    setSearchInput(`${selectedEquipment.id} - ${selectedEquipment.name}`);
+    setShowOptions(false);
+  };
+  
+  // 處理設備搜尋輸入
+  const handleSearchInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setSearchInput(value);
     
-    if (selectedEquipment) {
+    if (value.trim() === '') {
+      setFilteredOptions([]);
+      setShowOptions(false);
       setFormData({
         ...formData,
-        equipmentId: selectedEquipment.id,
-        equipmentName: selectedEquipment.name,
-        location: selectedEquipment.location,
-        maintenanceType: maintenanceOptions[0] || '緊急設備修復' // 預設維修類型
-      });
-    } else {
-      setFormData({
-        ...formData,
-        equipmentId: selectedId,
+        equipmentId: '',
         equipmentName: '',
         location: ''
       });
+    } else {
+      // 過濾設備選項
+      const filtered = equipmentOptions.filter(option => 
+        (option.id?.toLowerCase() || '').includes(value.toLowerCase()) ||
+        (option.name?.toLowerCase() || '').includes(value.toLowerCase()) ||
+        (option.location?.toLowerCase() || '').includes(value.toLowerCase())
+      );
+      setFilteredOptions(filtered);
+      setShowOptions(true);
     }
   };
 
@@ -270,19 +368,31 @@ export default function CMPage() {
       setCmRecords(updatedRecords);
       
       // 重置表單並關閉報修表單
-      setFormData({
-        equipmentId: '',
-        equipmentName: '',
-        location: '',
-        description: '',
-        abnormalType: '',
-        maintenanceType: ''
-      });
+      resetForm();
       setShowReportForm(false);
     } catch (error) {
       console.error('Error creating CM work order:', error);
       alert('建立工單失敗');
     }
+  };
+
+  // 重置表單的所有欄位和狀態
+  const resetForm = () => {
+    // 重置表單數據
+    setFormData({
+      equipmentId: '',
+      equipmentName: '',
+      location: '',
+      description: '',
+      abnormalType: '',
+      maintenanceType: '',
+      owner: ''
+    });
+    
+    // 重置設備搜尋相關狀態
+    setSearchInput('');
+    setFilteredOptions([]);
+    setShowOptions(false);
   };
 
   return (
@@ -329,7 +439,10 @@ export default function CMPage() {
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-xl font-semibold">{t('createReport')}</h2>
                 <button 
-                  onClick={() => setShowReportForm(false)}
+                  onClick={() => {
+                    resetForm();
+                    setShowReportForm(false);
+                  }}
                   className="text-gray-400 hover:text-gray-600"
                 >
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -343,24 +456,49 @@ export default function CMPage() {
                   <label className="block text-gray-700 mb-1">
                     {t('equipment')} <span className="text-red-500">*</span>
                   </label>
-                  <select
-                    className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    value={formData.equipmentId}
-                    onChange={handleEquipmentChange}
-                    required
-                  >
-                    <option value="">{t('selectEquipment')}</option>
-                    {equipmentOptions.map(option => (
-                      <option key={option.id} value={option.id}>
-                        {option.name} ({option.location})
-                      </option>
-                    ))}
-                  </select>
+                  {loading ? (
+                    <div className="w-full border border-gray-300 rounded-md px-3 py-2 bg-gray-100">
+                      {t('loading')}
+                    </div>
+                  ) : (
+                    <div className="relative" ref={autocompleteRef}>
+                      <input
+                        type="text"
+                        className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder={t('selectEquipment')}
+                        value={searchInput}
+                        onChange={handleSearchInput}
+                        onFocus={() => {
+                          if (searchInput.trim() !== '' && filteredOptions.length > 0) {
+                            setShowOptions(true);
+                          }
+                        }}
+                        required
+                      />
+                      {showOptions && filteredOptions.length > 0 && (
+                        <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                          {filteredOptions.map(option => (
+                            <div
+                              key={option.id}
+                              className="px-3 py-2 hover:bg-gray-100 cursor-pointer flex flex-col"
+                              onClick={() => handleEquipmentChange(option)}
+                            >
+                              <div className="font-medium">{option.id} - {option.name}</div>
+                              <div className="text-xs text-gray-500">{option.location}</div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {searchInput && formData.equipmentId === '' && (
+                        <div className="text-xs text-red-500 mt-1">請從列表中選擇設備</div>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <div className="mb-4">
                   <label className="block text-gray-700 mb-1">
-                    {t('description')} <span className="text-red-500">*</span>
+                    {t('failureDescription')} <span className="text-red-500">*</span>
                   </label>
                   <textarea
                     className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -374,41 +512,80 @@ export default function CMPage() {
 
                 <div className="mb-4">
                   <label className="block text-gray-700 mb-1">
+                    {t('owner')}
+                  </label>
+                  {loading ? (
+                    <div className="w-full border border-gray-300 rounded-md px-3 py-2 bg-gray-100">
+                      {t('loading')}
+                    </div>
+                  ) : (
+                    <select
+                      className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      value={formData.owner}
+                      onChange={(e) => setFormData({...formData, owner: e.target.value})}
+                    >
+                      <option value="">{t('selectOwner')}</option>
+                      {managerList.map(manager => (
+                        <option key={manager.id} value={manager.id}>
+                          {manager.id} - {manager.name} {manager.role ? `(${manager.role})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+
+                <div className="mb-4">
+                  <label className="block text-gray-700 mb-1">
                     {t('abnormalType')} <span className="text-red-500">*</span>
                   </label>
-                  <select
-                    className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    value={formData.abnormalType}
-                    onChange={(e) => setFormData({...formData, abnormalType: e.target.value})}
-                    required
-                  >
-                    <option value="">{t('selectAbnormalType')}</option>
-                    {abnormalOptions.map(option => (
-                      <option key={option} value={option}>{option}</option>
-                    ))}
-                  </select>
+                  {loading ? (
+                    <div className="w-full border border-gray-300 rounded-md px-3 py-2 bg-gray-100">
+                      {t('loading')}
+                    </div>
+                  ) : (
+                    <select
+                      className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      value={formData.abnormalType}
+                      onChange={(e) => setFormData({...formData, abnormalType: e.target.value})}
+                      required
+                    >
+                      <option value="">{t('selectAbnormalType')}</option>
+                      {abnormalOptions.map(option => (
+                        <option key={option} value={option}>{option}</option>
+                      ))}
+                    </select>
+                  )}
                 </div>
 
                 <div className="mb-4">
                   <label className="block text-gray-700 mb-1">
                     {t('maintenanceType')}
                   </label>
-                  <select
-                    className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    value={formData.maintenanceType}
-                    onChange={(e) => setFormData({...formData, maintenanceType: e.target.value})}
-                  >
-                    <option value="">{t('selectMaintenanceType')}</option>
-                    {maintenanceOptions.map(option => (
-                      <option key={option} value={option}>{option}</option>
-                    ))}
-                  </select>
+                  {loading ? (
+                    <div className="w-full border border-gray-300 rounded-md px-3 py-2 bg-gray-100">
+                      {t('loading')}
+                    </div>
+                  ) : (
+                    <select
+                      className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      value={formData.maintenanceType}
+                      onChange={(e) => setFormData({...formData, maintenanceType: e.target.value})}
+                    >
+                      <option value="">{t('selectMaintenanceType')}</option>
+                      {maintenanceOptions.map(option => (
+                        <option key={option} value={option}>{option}</option>
+                      ))}
+                    </select>
+                  )}
                 </div>
 
                 <div className="flex justify-end space-x-3 mt-6">
                   <button 
                     type="button"
-                    onClick={() => setShowReportForm(false)}
+                    onClick={() => {
+                      resetForm();
+                      setShowReportForm(false);
+                    }}
                     className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50"
                   >
                     {t('cancel')}

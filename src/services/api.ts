@@ -58,6 +58,7 @@ export interface CMWorkOrder {
   maintenanceType: string;
   creator: string;
   systemEngineer: string;
+  owner?: string;  // 新增負責人字段
 }
 
 // 定義CM工單詳情介面
@@ -80,6 +81,11 @@ export interface CMWorkOrderDetail {
   longTermMaintenance: boolean;
   reportTime: string;
   reportPerson: string;
+  startTime?: string;  // 維修開始時間
+  endTime?: string;    // 維修結束時間
+  owner?: string;       // 負責人
+  lead?: string;        // 主導人員
+  supervisor?: string;  // 監督人員
   checkItems: CheckItem[];
   reportItems: ReportItem[];
   // 資源項目
@@ -163,6 +169,12 @@ export interface EquipmentOption {
   id: string;
   name: string;
   location: string;
+}
+
+// 定義異常類型和維護類型選項介面
+export interface AbnormalMaintenanceOptions {
+  abnormalOptions: string[];
+  maintenanceOptions: string[];
 }
 
 // 定義員工介面
@@ -326,6 +338,47 @@ const simulateApiDelay = (ms: number = 300) => new Promise(resolve => setTimeout
 
 // 導出 apiRequest 讓其他模組可以使用
 export { apiRequest };
+
+// 直接導出獲取管理人員列表的函數，方便其他模組直接調用
+export const getManagerList = async (): Promise<Manager[]> => {
+  // 判斷是否使用模擬資料
+  if (process.env.NEXT_PUBLIC_USE_MOCK_DATA === 'true') {
+    await simulateApiDelay();
+    
+    // 模擬管理人員資料
+    return [
+      {
+        id: 'M001',
+        name: '張三',
+        role: '主管',
+        department: '維修部'
+      },
+      {
+        id: 'M002',
+        name: '李四',
+        role: '工程師',
+        department: '工程部'
+      },
+      {
+        id: 'M003',
+        name: '王五',
+        role: '技術主管',
+        department: '技術部'
+      },
+      {
+        id: 'M004',
+        name: '趙六',
+        role: '部門經理',
+        department: '維修部'
+      }
+    ];
+  }
+  
+  console.log("直接調用MOBILEAPP_GET_MANAGER_LIST...");
+  // 使用實際API
+  const url = buildApiUrl('MOBILEAPP_GET_MANAGER_LIST');
+  return apiRequest<Manager[]>(url);
+};
 
 // 數據更新相關API功能
 export const dataApi = {
@@ -521,8 +574,11 @@ export const pmApi = {
   
   // 獲取可擔任owner、lead、supervisor的人員清單
   getManagerList: async (): Promise<Manager[]> => {
+    console.log("pmApi.getManagerList被調用...");
+    
     // 判斷是否使用模擬資料
     if (process.env.NEXT_PUBLIC_USE_MOCK_DATA === 'true') {
+      console.log("使用模擬數據獲取管理人員列表");
       await simulateApiDelay();
       
       // 模擬管理人員資料
@@ -554,9 +610,18 @@ export const pmApi = {
       ];
     }
     
+    console.log("通過API獲取管理人員列表");
     // 使用實際API
     const url = buildApiUrl('MOBILEAPP_GET_MANAGER_LIST');
-    return apiRequest<Manager[]>(url);
+    console.log("管理人員列表API URL:", url);
+    try {
+      const result = await apiRequest<Manager[]>(url);
+      console.log("管理人員列表API返回結果:", result);
+      return result;
+    } catch (error) {
+      console.error("管理人員列表API返回錯誤:", error);
+      throw error;
+    }
   },
   
   // 更新PM工單
@@ -700,6 +765,28 @@ export const cmApi = {
     return apiRequest<string[]>(url);
   },
   
+  // 同時獲取異常類型和維護類型列表
+  getAbnormalAndMaintenanceOptions: async (): Promise<AbnormalMaintenanceOptions> => {
+    // 判斷是否使用模擬資料
+    if (process.env.NEXT_PUBLIC_USE_MOCK_DATA === 'true') {
+      await simulateApiDelay();
+      const response = await fetch('/api/data.json');
+      if (!response.ok) {
+        throw new Error(`HTTP error! Status: ${response.status}`);
+      }
+      
+      const data: ApiData = await response.json();
+      return {
+        abnormalOptions: data.cm.abnormalOptions,
+        maintenanceOptions: data.cm.maintenanceOptions
+      };
+    }
+    
+    // 使用實際API
+    const url = buildApiUrl('MOBILEAPP_GET_ABNORMAL_MAINTENANCE_OPTIONS');
+    return apiRequest<AbnormalMaintenanceOptions>(url);
+  },
+  
   // 獲取員工列表
   getStaffList: async (): Promise<Staff[]> => {
     // 判斷是否使用模擬資料
@@ -752,7 +839,8 @@ export const cmApi = {
         abnormalType: workOrder.abnormalType || '',
         maintenanceType: workOrder.maintenanceType || '',
         creator: 'Current User',
-        systemEngineer: 'System'
+        systemEngineer: 'System',
+        owner: workOrder.owner || ''  // 添加owner字段
       };
     }
     
@@ -771,6 +859,49 @@ export const cmApi = {
     // 使用實際API
     const url = buildApiUrl('MOBILEAPP_SUBMIT_CM_WORKORDER', { wonum: id });
     return apiRequest<CMWorkOrderDetail>(url, 'POST', { params: { comment } });
+  },
+  
+  // 保存CM工單數據
+  saveWorkOrder: async (workOrderData: any): Promise<CMWorkOrderDetail> => {
+    // 判斷是否使用模擬資料
+    if (process.env.NEXT_PUBLIC_USE_MOCK_DATA === 'true') {
+      await simulateApiDelay(500);
+      console.log('模擬保存CM工單數據:', workOrderData);
+      
+      // 模擬返回更新後的工單詳情
+      return {
+        ...workOrderData,
+        status: 'WAPPR',
+        checkItems: [],
+        reportItems: []
+      } as unknown as CMWorkOrderDetail;
+    }
+    
+    // 使用實際API
+    const url = buildApiUrl('MOBILEAPP_SAVE_CM_WORKORDER');
+    return apiRequest<CMWorkOrderDetail>(url, 'POST', workOrderData);
+  },
+  
+  // 保存CM工單單個欄位
+  saveWorkOrderField: async (fieldData: any): Promise<CMWorkOrderDetail> => {
+    // 判斷是否使用模擬資料
+    if (process.env.NEXT_PUBLIC_USE_MOCK_DATA === 'true') {
+      await simulateApiDelay(300);
+      console.log('模擬保存CM工單單個欄位:', fieldData);
+      
+      // 模擬返回更新後的工單詳情
+      return {
+        id: fieldData.id,
+        status: 'WAPPR',
+        ...fieldData,
+        checkItems: [],
+        reportItems: []
+      } as unknown as CMWorkOrderDetail;
+    }
+    
+    // 使用實際API
+    const url = buildApiUrl('MOBILEAPP_SAVE_CM_WORKORDER_FIELD');
+    return apiRequest<CMWorkOrderDetail>(url, 'POST', fieldData);
   },
   
   // 獲取CM工單的資源數據
@@ -864,6 +995,25 @@ export const cmApi = {
       materials: MaterialResource[];
       tools: ToolResource[];
     }>(url);
+  },
+
+  // 取消CM工單
+  cancelWorkOrder: async (id: string, reason: string): Promise<{ success: boolean; message: string }> => {
+    // 判斷是否使用模擬資料
+    if (process.env.NEXT_PUBLIC_USE_MOCK_DATA === 'true') {
+      await simulateApiDelay(500);
+      console.log('模擬取消CM工單:', id, '取消原因:', reason);
+      
+      // 模擬API返回
+      return {
+        success: true,
+        message: '工單取消成功'
+      };
+    }
+    
+    // 使用實際API
+    const url = buildApiUrl('MOBILEAPP_CANCEL_CM_WORKORDER', { wonum: id });
+    return apiRequest<{ success: boolean; message: string }>(url, 'POST', { reason });
   }
 };
 

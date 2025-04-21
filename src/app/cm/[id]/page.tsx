@@ -6,7 +6,8 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import WorkReport from '@/components/WorkReport';
 import CMActual from '@/components/CMActual';
 import SubmitModal from '@/components/SubmitModal';
-import api from '@/services/api';
+import CancelModal from '@/components/CancelModal';
+import api, { getManagerList } from '@/services/api';
 
 export default function CMDetailPage({ params }: { params: { id: string } }) {
   const router = useRouter();
@@ -19,7 +20,15 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
     abnormalType: false,
     workConditions: false
   });
-  const [selectedStaff, setSelectedStaff] = useState<string>('');
+  const [selectedStaff, setSelectedStaff] = useState<{
+    owner: string;
+    lead: string;
+    supervisor: string;
+  }>({
+    owner: '',
+    lead: '',
+    supervisor: ''
+  });
   const [maintenanceTime, setMaintenanceTime] = useState({
     startDate: '',
     endDate: ''
@@ -28,7 +37,15 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
   // 添加數據變更狀態
   const [isDirty, setIsDirty] = useState<boolean>(false);
   // 添加原始數據狀態
-  const [originalStaff, setOriginalStaff] = useState<string>('');
+  const [originalStaff, setOriginalStaff] = useState<{
+    owner: string;
+    lead: string;
+    supervisor: string;
+  }>({
+    owner: '',
+    lead: '',
+    supervisor: ''
+  });
   const [originalTime, setOriginalTime] = useState({
     startDate: '',
     endDate: ''
@@ -54,6 +71,14 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
     assets: false,
     abnormalType: false
   });
+
+  // 新增API數據相關狀態
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [workOrder, setWorkOrder] = useState<any>(null);
+  const [equipmentOptions, setEquipmentOptions] = useState<any[]>([]);
+  const [staffList, setStaffList] = useState<any[]>([]);
+  const [managerList, setManagerList] = useState<any[]>([]);
+  const [error, setError] = useState<string | null>(null);
   
   // 異常類型選項
   const abnormalOptions = [
@@ -65,54 +90,122 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
     'Component Damage'
   ];
 
-  // 模擬從API獲取的工單數據
-  const workOrder = {
-    id: params.id,
-    status: 'WAPPR', // 使用標準工單狀態
-    openTime: '2020/11/29 14:31',
-    creator: 'MAX_NICK',
-    systemCode: 'F15',
-    equipmentCode: '002003V01',
-    description: 'Pump efficiency decrease',
-    assets: 'P3PLUMP-P-LOADZNG03A',
-    location: 'F15/00203W02',
-    equipmentType: 'Pump',
-    abnormalType: 'Efficiency Decrease',
-    maintenanceType: 'Emergency Equipment Repair',
-    workConditions: '必填',
-    costCenter: '',
-    longTermMaintenance: false,
-    reportTime: '2020/11/29 14:31',
-    reportPerson: 'MAX_NICK'
-  };
-
-  // 設備類型選項 - 模擬數據
-  const equipmentOptions = [
-    { id: 'P1THC-ZERO-C01', name: 'CUP ZEROC01 Zero Generator', location: 'F15/00203W02' },
-    { id: 'P3PLUMP-P-LOADZNG03A', name: 'Pump XXXXXXXX', location: 'F15/00203W02' },
-    { id: 'P4AIR-COMP-01', name: 'Air Compressor 01', location: 'F15/00204W01' }
-  ];
-
-  // 初始化可編輯欄位
+  // 從API獲取工單詳情數據
   useEffect(() => {
-    const fields = {
-      description: workOrder.description,
-      assets: workOrder.assets,
-      abnormalType: workOrder.abnormalType
+    const fetchWorkOrderDetails = async () => {
+      try {
+        setIsLoading(true);
+        console.log("開始獲取CM工單詳情:", params.id);
+        console.log("MOCK_DATA環境變數:", process.env.NEXT_PUBLIC_USE_MOCK_DATA);
+        console.log("當前環境:", process.env.NODE_ENV);
+        
+        // 調用API獲取工單詳情
+        const response = await api.cm.getWorkOrderDetail(params.id);
+        console.log("獲取到CM工單詳情:", response);
+        
+        if (response) {
+          // 設置工單詳情數據
+          setWorkOrder(response);
+          
+          // 初始化可編輯欄位
+          setEditableFields({
+            description: response.description || '',
+            assets: response.assets || '',
+            abnormalType: response.abnormalType || ''
+          });
+          
+          setOriginalEditableFields({
+            description: response.description || '',
+            assets: response.assets || '',
+            abnormalType: response.abnormalType || ''
+          });
+          
+          // 設置維護時間
+          if (response.startTime || response.endTime) {
+            const startDate = response.startTime || '';
+            const endDate = response.endTime || '';
+            
+            setMaintenanceTime({ startDate, endDate });
+            setOriginalTime({ startDate, endDate });
+          }
+          
+          // 設置選中的負責人員
+          const staffData = {
+            owner: response.owner || '',
+            lead: response.lead || '',
+            supervisor: response.supervisor || ''
+          };
+          
+          setSelectedStaff(staffData);
+          setOriginalStaff({...staffData});
+          
+          // 獲取設備選項和人員列表
+          const fetchAdditionalData = async () => {
+            try {
+              console.log("開始獲取額外資料");
+              
+              // 使用靜態模擬數據代替API調用
+              const mockEquipOptions = [
+                { id: 'P1THC-ZERO-C01', name: 'CUP ZEROC01 Zero Generator', location: 'F15/00203W02' },
+                { id: 'P3PLUMP-P-LOADZNG03A', name: 'Pump XXXXXXXX', location: 'F15/00203W02' },
+                { id: 'P4AIR-COMP-01', name: 'Air Compressor 01', location: 'F15/00204W01' }
+              ];
+              console.log("使用模擬設備選項:", mockEquipOptions);
+              setEquipmentOptions(mockEquipOptions);
+              
+              // 獲取人員列表
+              // const staff = await api.cm.getStaffList();
+              // console.log("人員列表:", staff);
+              // setStaffList(staff);
+              
+              // 使用靜態模擬數據代替API調用
+              const mockStaffList = [
+                { id: 'EMP001', name: '張三', role: '技術員' },
+                { id: 'EMP002', name: '李四', role: '維護工程師' },
+                { id: 'EMP003', name: '王五', role: '資深技術員' }
+              ];
+              console.log("使用模擬人員列表:", mockStaffList);
+              setStaffList(mockStaffList);
+              
+              try {
+                // 獲取管理人員列表
+                console.log("開始獲取管理人員列表...");
+                const manager = await getManagerList();
+                console.log("管理人員列表獲取成功:", manager);
+                setManagerList(manager);
+              } catch (managerError) {
+                console.error("獲取管理人員列表失敗:", managerError);
+                // 使用一般員工列表作為備用選項
+                console.log("使用模擬人員列表作為管理人員備用選項");
+                setManagerList(mockStaffList.map((s: { id: string; name: string; role: string }) => ({...s, role: '員工'})));
+              }
+              
+              console.log("額外資料獲取完成");
+            } catch (error) {
+              console.error('獲取額外數據失敗:', error);
+            }
+          };
+          
+          fetchAdditionalData();
+        } else {
+          console.error('API返回空的工單詳情');
+          setError('工單詳情不存在或已被刪除');
+        }
+      } catch (error) {
+        console.error('獲取工單詳情失敗:', error);
+        setError('無法加載工單詳情，請稍後重試');
+      } finally {
+        setIsLoading(false);
+      }
     };
     
-    setEditableFields(fields);
-    setOriginalEditableFields(fields);
-    
-    // 初始化時間和人員原始數據
-    setOriginalTime(maintenanceTime);
-    setOriginalStaff(selectedStaff);
-  }, [workOrder.description, workOrder.assets, workOrder.abnormalType]);
+    fetchWorkOrderDetails();
+  }, [params.id]);
 
   // 監控數據變更狀態
   useEffect(() => {
     // 檢查人員數據是否變更
-    const isStaffChanged = selectedStaff !== originalStaff;
+    const isStaffChanged = JSON.stringify(selectedStaff) !== JSON.stringify(originalStaff);
     
     // 檢查時間數據是否變更
     const isTimeChanged = JSON.stringify(maintenanceTime) !== JSON.stringify(originalTime);
@@ -125,14 +218,6 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
     // 更新整體數據變更狀態
     setIsDirty(isStaffChanged || isTimeChanged || isFieldsChanged);
   }, [selectedStaff, maintenanceTime, editableFields, originalStaff, originalTime, originalEditableFields]);
-
-  // 模擬員工列表
-  const staffList = [
-    { id: 'EMP001', name: 'John Smith' },
-    { id: 'EMP002', name: 'Mary Johnson' },
-    { id: 'EMP003', name: 'David Lee' },
-    { id: 'EMP004', name: 'Sarah Chen' },
-  ];
 
   // 工單狀態翻譯
   const statusTranslations = {
@@ -271,6 +356,30 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
     report: {
       zh: '報表',
       en: 'Report'
+    },
+    loading: {
+      zh: '加載中...',
+      en: 'Loading...'
+    },
+    error: {
+      zh: '發生錯誤',
+      en: 'An error occurred'
+    },
+    startTime: {
+      zh: '開始時間',
+      en: 'Start Time'
+    },
+    endTime: {
+      zh: '結束時間',
+      en: 'End Time'
+    },
+    responsibleStaff: {
+      zh: '負責人員',
+      en: 'Responsible Staff'
+    },
+    selectStaff: {
+      zh: '選擇人員',
+      en: 'Select staff'
     }
   };
 
@@ -282,17 +391,38 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
     router.back();
   };
 
-  const handleSave = () => {
-    console.log('Saving work order with editable fields:', editableFields);
-    // 實現保存邏輯
-    
-    // 保存成功後，更新原始數據狀態
-    setOriginalEditableFields({...editableFields});
-    setOriginalStaff(selectedStaff);
-    setOriginalTime({...maintenanceTime});
-    
-    // 重置變更狀態
-    setIsDirty(false);
+  // 更新保存功能以使用API
+  const handleSave = async () => {
+    try {
+      // 準備要保存的數據
+      const saveData = {
+        id: params.id,
+        description: editableFields.description,
+        assets: editableFields.assets,
+        abnormalType: editableFields.abnormalType,
+        maintenanceTime: maintenanceTime,
+        owner: selectedStaff.owner,
+        lead: selectedStaff.lead,
+        supervisor: selectedStaff.supervisor
+      };
+      
+      // 調用API保存數據
+      const result = await api.cm.saveWorkOrder(saveData);
+      
+      // 保存成功後，更新原始數據狀態
+      setOriginalEditableFields({...editableFields});
+      setOriginalStaff({...selectedStaff});
+      setOriginalTime({...maintenanceTime});
+      
+      // 重置變更狀態
+      setIsDirty(false);
+      
+      // 顯示成功訊息
+      alert(language === 'zh' ? '保存成功' : 'Save successful');
+    } catch (error) {
+      console.error('Error saving work order:', error);
+      alert(language === 'zh' ? '保存失敗，請重試' : 'Save failed, please try again');
+    }
   };
 
   const handleComplete = () => {
@@ -313,12 +443,15 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
 
   // 工單狀態顯示
   const getStatusDisplay = () => {
+    if (!workOrder) return '';
     const status = workOrder.status as keyof typeof statusTranslations;
     return statusTranslations[status]?.[language] || status;
   };
 
   // 工單狀態顏色
   const getStatusColor = () => {
+    if (!workOrder) return 'bg-gray-500';
+    
     switch (workOrder.status) {
       case 'WAPPR':
       case 'WMATL':
@@ -343,30 +476,60 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
   const isMaintenanceInfoComplete = () => {
     return maintenanceTime.startDate && 
            maintenanceTime.endDate && 
-           selectedStaff;
+           selectedStaff.owner &&
+           selectedStaff.lead &&
+           selectedStaff.supervisor;
   };
 
   // 保存單個欄位並關閉編輯
-  const saveField = (field: 'description' | 'assets' | 'abnormalType') => {
-    console.log(`保存欄位 ${field}:`, editableFields[field]);
-    setEditing({...editing, [field]: false});
-    // 這裡可以添加API保存邏輯
+  const saveField = async (field: 'description' | 'assets' | 'abnormalType') => {
+    try {
+      // 準備要保存的欄位數據
+      const fieldData = {
+        id: params.id,
+        [field]: editableFields[field]
+      };
+      
+      // 調用API保存特定欄位
+      await api.cm.saveWorkOrderField(fieldData);
+      
+      // 關閉編輯狀態
+      setEditing({...editing, [field]: false});
+      
+      // 更新原始欄位值
+      setOriginalEditableFields({
+        ...originalEditableFields,
+        [field]: editableFields[field]
+      });
+      
+      // 檢查是否還有其他未保存的變更
+      const hasOtherChanges = 
+        JSON.stringify({
+          ...originalEditableFields,
+          [field]: editableFields[field]
+        }) !== JSON.stringify(editableFields) ||
+        JSON.stringify(selectedStaff) !== JSON.stringify(originalStaff) ||
+        JSON.stringify(maintenanceTime) !== JSON.stringify(originalTime);
+      
+      setIsDirty(hasOtherChanges);
+    } catch (error) {
+      console.error(`保存欄位 ${field} 失敗:`, error);
+      alert(language === 'zh' ? `保存失敗，請重試` : `Save failed, please try again`);
+    }
   };
 
   // 取消編輯並重置為原始值
   const cancelEdit = (field: 'description' | 'assets' | 'abnormalType') => {
     setEditableFields({
       ...editableFields, 
-      [field]: field === 'description' 
-        ? workOrder.description 
-        : field === 'assets' 
-          ? workOrder.assets 
-          : workOrder.abnormalType
+      [field]: originalEditableFields[field]
     });
     setEditing({...editing, [field]: false});
   };
 
   const [showSubmitModal, setShowSubmitModal] = useState(false);
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
   const [submitSuccess, setSubmitSuccess] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -396,6 +559,75 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
     }
   };
 
+  // 處理取消工單
+  const handleCancelClick = () => {
+    setShowCancelModal(true);
+  };
+
+  // 處理工單取消提交
+  const handleCancelWorkOrder = async (reason: string) => {
+    try {
+      setIsCancelling(true);
+      // 呼叫 API 取消工單
+      const result = await api.cm.cancelWorkOrder(params.id, reason);
+      
+      console.log('Work order cancelled successfully:', result);
+      
+      // 顯示成功訊息
+      alert(language === 'zh' ? '工單已成功取消！' : 'Work order has been cancelled successfully!');
+      
+      // 關閉確認對話框
+      setShowCancelModal(false);
+      
+      // 返回 CM 列表頁面
+      router.push('/cm');
+    } catch (error) {
+      console.error('Error cancelling work order:', error);
+      alert(language === 'zh' ? '取消工單失敗，請重試。' : 'Failed to cancel work order. Please try again.');
+    } finally {
+      setIsCancelling(false);
+    }
+  };
+
+  // 如果正在加載，顯示加載中
+  if (isLoading) {
+    return (
+      <div className="flex flex-col h-screen items-center justify-center bg-gray-50">
+        <div className="text-xl">{t('loading')}</div>
+      </div>
+    );
+  }
+
+  // 如果發生錯誤，顯示錯誤訊息
+  if (error) {
+    return (
+      <div className="flex flex-col h-screen items-center justify-center bg-gray-50">
+        <div className="text-xl text-red-500">{error}</div>
+        <button 
+          onClick={handleGoBack}
+          className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+        >
+          {language === 'zh' ? '返回' : 'Go Back'}
+        </button>
+      </div>
+    );
+  }
+
+  // 如果工單不存在
+  if (!workOrder) {
+    return (
+      <div className="flex flex-col h-screen items-center justify-center bg-gray-50">
+        <div className="text-xl text-red-500">{t('error')}</div>
+        <button 
+          onClick={handleGoBack}
+          className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+        >
+          {language === 'zh' ? '返回' : 'Go Back'}
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-screen bg-gray-50">
       {/* 頂部固定區域 */}
@@ -410,6 +642,14 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
           <div className="ml-4 text-xl font-medium truncate">{workOrder.id}</div>
           <div className="flex-1"></div>
           <div className="flex space-x-2">
+            <button 
+              onClick={handleCancelClick}
+              className="border border-red-600 text-red-600 px-3 py-1 rounded hover:bg-red-50"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
             <button 
               onClick={handleSave} 
               disabled={!isDirty}
@@ -507,7 +747,7 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
                         onChange={(e) => setEditableFields({...editableFields, assets: e.target.value})}
                         autoFocus
                       >
-                        {equipmentOptions.map(equipment => (
+                        {equipmentOptions.map((equipment: any) => (
                           <option key={equipment.id} value={equipment.id}>
                             {equipment.id} - {equipment.name}
                           </option>
@@ -619,7 +859,7 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm text-gray-600 mb-1">
-                    Start Time
+                    {t('startTime')}
                     {!maintenanceTime.startDate && (
                       <span className="text-red-500 ml-1">*</span>
                     )}
@@ -637,7 +877,7 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
                 </div>
                 <div>
                   <label className="block text-sm text-gray-600 mb-1">
-                    End Time
+                    {t('endTime')}
                     {!maintenanceTime.endDate && (
                       <span className="text-red-500 ml-1">*</span>
                     )}
@@ -654,26 +894,78 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
                   />
                 </div>
               </div>
+              
+              {/* 負責人員欄位 - 更新為與PM工單相同的三個角色 */}
               <div>
                 <label className="block text-sm text-gray-600 mb-1">
-                  Responsible Staff
-                  {!selectedStaff && (
+                  {language === 'zh' ? '負責人' : 'Owner'}
+                  {!selectedStaff.owner && (
                     <span className="text-red-500 ml-1">*</span>
                   )}
                 </label>
                 <select
                   className={`w-full border rounded px-3 py-2 focus:outline-none focus:ring-1 ${
-                    selectedStaff 
+                    selectedStaff.owner 
                       ? 'border-green-500 focus:border-green-500 focus:ring-green-500' 
                       : 'border-gray-300 focus:border-blue-500 focus:ring-blue-500'
                   }`}
-                  value={selectedStaff || ''}
-                  onChange={(e) => setSelectedStaff(e.target.value)}
+                  value={selectedStaff.owner || ''}
+                  onChange={(e) => setSelectedStaff(prev => ({ ...prev, owner: e.target.value }))}
                 >
-                  <option value="">Select staff</option>
-                  {staffList.map(staff => (
-                    <option key={staff.id} value={staff.id}>
-                      {staff.id} - {staff.name}
+                  <option value="">{language === 'zh' ? '選擇負責人' : 'Select owner'}</option>
+                  {managerList.map((manager: any) => (
+                    <option key={`owner-${manager.id}`} value={manager.id}>
+                      {manager.id} - {manager.name} {manager.role ? `(${manager.role})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              
+              <div>
+                <label className="block text-sm text-gray-600 mb-1">
+                  {language === 'zh' ? '主導人員' : 'Lead'}
+                  {!selectedStaff.lead && (
+                    <span className="text-red-500 ml-1">*</span>
+                  )}
+                </label>
+                <select
+                  className={`w-full border rounded px-3 py-2 focus:outline-none focus:ring-1 ${
+                    selectedStaff.lead 
+                      ? 'border-green-500 focus:border-green-500 focus:ring-green-500' 
+                      : 'border-gray-300 focus:border-blue-500 focus:ring-blue-500'
+                  }`}
+                  value={selectedStaff.lead || ''}
+                  onChange={(e) => setSelectedStaff(prev => ({ ...prev, lead: e.target.value }))}
+                >
+                  <option value="">{language === 'zh' ? '選擇主導人員' : 'Select lead'}</option>
+                  {managerList.map((manager: any) => (
+                    <option key={`lead-${manager.id}`} value={manager.id}>
+                      {manager.id} - {manager.name} {manager.role ? `(${manager.role})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              
+              <div>
+                <label className="block text-sm text-gray-600 mb-1">
+                  {language === 'zh' ? '監督人員' : 'Supervisor'}
+                  {!selectedStaff.supervisor && (
+                    <span className="text-red-500 ml-1">*</span>
+                  )}
+                </label>
+                <select
+                  className={`w-full border rounded px-3 py-2 focus:outline-none focus:ring-1 ${
+                    selectedStaff.supervisor 
+                      ? 'border-green-500 focus:border-green-500 focus:ring-green-500' 
+                      : 'border-gray-300 focus:border-blue-500 focus:ring-blue-500'
+                  }`}
+                  value={selectedStaff.supervisor || ''}
+                  onChange={(e) => setSelectedStaff(prev => ({ ...prev, supervisor: e.target.value }))}
+                >
+                  <option value="">{language === 'zh' ? '選擇監督人員' : 'Select supervisor'}</option>
+                  {managerList.map((manager: any) => (
+                    <option key={`supervisor-${manager.id}`} value={manager.id}>
+                      {manager.id} - {manager.name} {manager.role ? `(${manager.role})` : ''}
                     </option>
                   ))}
                 </select>
@@ -777,6 +1069,13 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
         isOpen={showSubmitModal}
         onClose={() => setShowSubmitModal(false)}
         onSubmit={handleSubmitWorkOrder}
+      />
+
+      {/* Cancel Modal */}
+      <CancelModal
+        isOpen={showCancelModal}
+        onClose={() => setShowCancelModal(false)}
+        onCancel={handleCancelWorkOrder}
       />
     </div>
   );
