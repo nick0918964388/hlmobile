@@ -878,8 +878,8 @@ export const cmApi = {
     }
     
     // 使用實際API
-    const url = buildApiUrl('MOBILEAPP_UPDATE_PM_WORKORDER', { wonum: workOrderData.id });
-    return apiRequest<CMWorkOrderDetail>(url, 'POST', { params: { workOrder: workOrderData } });
+    const url = buildApiUrl('MOBILEAPP_SAVE_CM_WORKORDER');
+    return apiRequest<CMWorkOrderDetail>(url, 'POST', workOrderData);
   },
   
   // 保存CM工單單個欄位
@@ -900,8 +900,8 @@ export const cmApi = {
     }
     
     // 使用實際API
-    const url = buildApiUrl('MOBILEAPP_SAVE_CM_WORKORDER_FIELD');
-    return apiRequest<CMWorkOrderDetail>(url, 'POST', fieldData);
+    const url = buildApiUrl('MOBILEAPP_UPDATE_PM_WORKORDER', { wonum: fieldData.id });
+    return apiRequest<CMWorkOrderDetail>(url, 'POST', { params: { workOrder: fieldData } });
   },
   
   // 獲取CM工單的資源數據
