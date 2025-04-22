@@ -1,0 +1,38 @@
+        // 返回成功結果
+        var resultObj = {
+            id: workOrderMbo.getString("wonum"),
+            status: workOrderMbo.getString("STATUS"),
+            description: workOrderMbo.getString("DESCRIPTION"),
+            location: workOrderMbo.getString("LOCATION"),
+            systemEngineer: workOrderMbo.getString("LEAD"),
+            openTime: isoFormat1.format(workOrderMbo.getDate("REPORTDATE")),
+            creator: workOrderMbo.getString("REPORTEDBY") || "",
+            systemCode: "",
+            route: workOrderMbo.getString("route") || "",
+            equipmentCode: workOrderMbo.getString("ASSETNUM") || "",
+            assets: workOrderMbo.getString("ASSETNUM") || "",
+            equipmentType: getAssetType(workOrderMbo.getString("ASSETNUM")),
+            reportTime: isoFormat1.format(workOrderMbo.getDate("REPORTDATE")),
+            reportPerson: workOrderMbo.getString("REPORTEDBY") || "",
+            owner: workOrderMbo.getString("owner") || "",
+            lead: workOrderMbo.getString("lead") || "",
+            supervisor: workOrderMbo.getString("supervisor") || "",
+            startTime: isoFormat.format(workOrderMbo.getDate("actstart")),
+            endTime: isoFormat.format(workOrderMbo.getDate("actfinish")),
+            
+            // 添加CM工單特有欄位
+            failureDetails: workOrderMbo.getString("FAILUREREPORT") || "",
+            repairMethod: workOrderMbo.getString("REPAIRFACILITIES") || "",
+            
+            // 計算停機時間的小時和分鐘
+            downtimeHours: Math.floor(workOrderMbo.getInt("DOWNTIME") / 60),
+            downtimeMinutes: workOrderMbo.getInt("DOWNTIME") % 60,
+            
+            // 完成確認狀態
+            isCompleted: workOrderMbo.getString("PROBLEMCODE") === "FIXED",
+            
+            // 其他必要欄位
+            checkItems: getCheckItems(workOrderMbo),
+            resources: getReportItemsAndResources(workOrderMbo),
+            message: "獲取工單詳情成功"
+        }; 

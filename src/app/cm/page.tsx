@@ -161,7 +161,7 @@ export default function CMPage() {
   // 篩選顯示的工單
   const filteredRecords = cmRecords.filter(record => {
     // 根據頁籤篩選
-    if (activeTab === 'waiting' && record.status !== 'waiting_approval') {
+    if (activeTab === 'waiting' && record.status !== 'WAPPR') {
       return false;
     }
 
@@ -180,6 +180,102 @@ export default function CMPage() {
 
     return true;
   });
+
+  // 工單狀態翻譯
+  const statusTranslations = {
+    WAPPR: {
+      zh: '等待核准',
+      en: 'Waiting for Approval'
+    },
+    WMATL: {
+      zh: '等待物料',
+      en: 'Waiting for Material'
+    },
+    WSCH: {
+      zh: '等待排程',
+      en: 'Waiting to be Scheduled'
+    },
+    WSCHED: {
+      zh: '等待排程',
+      en: 'Waiting to be Scheduled'
+    },
+    WPCOND: {
+      zh: '等待工廠條件',
+      en: 'Waiting for Plant Condition'
+    },
+    APPR: {
+      zh: '已核准',
+      en: 'Approved'
+    },
+    INPRG: {
+      zh: '進行中',
+      en: 'In Progress'
+    },
+    CAN: {
+      zh: '已取消',
+      en: 'Canceled'
+    },
+    COMP: {
+      zh: '已完成',
+      en: 'Complete'
+    },
+    CLOSE: {
+      zh: '已關閉',
+      en: 'Closed'
+    }
+  };
+
+  // 獲取狀態顯示名稱
+  const getStatusDisplay = (status: string) => {
+    const statusKey = status as keyof typeof statusTranslations;
+    return statusTranslations[statusKey]?.[language] || status;
+  };
+
+  // 獲取狀態顏色
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'WAPPR':
+      case 'WMATL':
+      case 'WSCH':
+      case 'WSCHED':
+      case 'WPCOND':
+        return 'bg-yellow-500';
+      case 'APPR':
+      case 'INPRG':
+        return 'bg-blue-500';
+      case 'COMP':
+        return 'bg-green-500';
+      case 'CLOSE':
+        return 'bg-gray-500';
+      case 'CAN':
+        return 'bg-red-500';
+      default:
+        return 'bg-gray-500';
+    }
+  };
+
+  // 獲取狀態標籤樣式
+  const getStatusBadgeStyle = (status: string) => {
+    switch (status) {
+      case 'WAPPR':
+      case 'WMATL':
+      case 'WSCH':
+      case 'WSCHED':
+      case 'WPCOND':
+        return 'bg-yellow-100 text-yellow-800';
+      case 'APPR':
+      case 'INPRG':
+        return 'bg-blue-100 text-blue-800';
+      case 'COMP':
+        return 'bg-green-100 text-green-800';
+      case 'CLOSE':
+        return 'bg-gray-100 text-gray-800';
+      case 'CAN':
+        return 'bg-red-100 text-red-800';
+      default:
+        return 'bg-gray-100 text-gray-800';
+    }
+  };
 
   // 翻譯
   const translations = {
@@ -679,19 +775,15 @@ export default function CMPage() {
               >
                 <div className="flex">
                   {/* 左側彩色狀態條 */}
-                  <div className={`w-2 ${record.status === 'waiting_approval' ? 'bg-yellow-500' : 'bg-red-500'}`}></div>
+                  <div className={`w-2 ${getStatusColor(record.status)}`}></div>
                   
                   <div className="flex-1 p-4">
                     {/* 頂部資訊列 */}
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center gap-3">
                         <span className="font-medium text-gray-800 text-lg">{record.id}</span>
-                        <span className={`px-2 py-0.5 text-xs rounded-full ${
-                          record.status === 'waiting_approval' 
-                            ? 'bg-yellow-100 text-yellow-800' 
-                            : 'bg-red-100 text-red-800'
-                        }`}>
-                          {record.status === 'waiting_approval' ? t('waitingForApproval') : 'Approved'}
+                        <span className={`px-2 py-0.5 text-xs rounded-full ${getStatusBadgeStyle(record.status)}`}>
+                          {getStatusDisplay(record.status)}
                         </span>
                       </div>
                       <div className="text-xs text-gray-500">

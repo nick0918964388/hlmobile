@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { CheckItem as ApiCheckItem } from '@/services/api';
+import { CheckItem as ApiCheckItem, uploadPmAttachment, WorkOrderAttachment } from '@/services/api';
 
 interface Media {
   id: string;
@@ -35,6 +35,7 @@ interface ActualCheckProps {
   initialCheckItems?: ApiCheckItem[];
   assets?: string;
   route?: string;
+  attachments?: WorkOrderAttachment[];
 }
 
 // 防抖函數
@@ -61,15 +62,20 @@ const ActualCheck: React.FC<ActualCheckProps> = ({
   onCompleteStatusChange, 
   initialCheckItems,
   assets,
-  route
+  route,
+  attachments
 }) => {
   const mapApiCheckItemsToInternal = (apiItems?: ApiCheckItem[]): CheckItem[] => {
     if (!apiItems || apiItems.length === 0) {
       return [];
     }
     
+    console.log('API檢查項目:', apiItems);
+    
     return apiItems.map((item, index) => {
       const assetNum = item.assetNum || 'Default';
+      console.log(`處理API檢查項目: ID=${item.id}, assetNum=${assetNum}`);
+      
       return {
         id: item.id,
         sequence: index,
@@ -100,6 +106,9 @@ const ActualCheck: React.FC<ActualCheckProps> = ({
 
   // 追踪之前的檢查項目狀態
   const prevCheckItemsRef = useRef<string>('');
+
+  // 增加計數器，用於生成附件檔名中的流水號
+  const [attachmentCounters, setAttachmentCounters] = useState<{[key: string]: number}>({});
 
   useEffect(() => {
     if (checkItems.length > 0) {
@@ -290,28 +299,120 @@ const ActualCheck: React.FC<ActualCheckProps> = ({
     }
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // 將檔案轉換為 base64
+  const fileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === 'string') {
+          // 去除 base64 前綴 (例如 "data:image/png;base64,")
+          const base64String = reader.result.split(',')[1];
+          resolve(base64String);
+        } else {
+          reject(new Error('轉換失敗'));
+        }
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const getFileExtension = (filename: string): string => {
+    return filename.slice((filename.lastIndexOf('.') - 1 >>> 0) + 2);
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!activeItemId || !e.target.files || e.target.files.length === 0) return;
     
     const file = e.target.files[0];
     const url = URL.createObjectURL(file);
     
-    const updatedItems = checkItems.map(item => {
-      if (item.compositeId === activeItemId) {
-        return {
-          ...item,
-          media: [...item.media, {
-            id: `${item.id}_media_${Date.now()}`,
-            type: mediaType,
-            url
-          }]
-        };
+    try {
+      // 解析 activeItemId (格式: itemId_assetNum)
+      const [itemId, assetNum] = activeItemId.split('_');
+      
+      // 獲取要用於assetSeq的資產號
+      let assetSequence = assetNum;
+      if (assetNum === 'Default' || !assetNum) {
+        // 如果是默認資產，設置assetSeq為0
+        assetSequence = '0';
       }
-      return item;
-    });
-    
-    setCheckItems(updatedItems);
-    updateAssetGroupWithItems(updatedItems);
+      
+      // 生成流水號
+      const counterKey = `${assetSequence}_${itemId}`;
+      const currentCounter = attachmentCounters[counterKey] || 0;
+      const newCounter = currentCounter + 1;
+      
+      // 更新計數器狀態
+      setAttachmentCounters(prev => ({
+        ...prev,
+        [counterKey]: newCounter
+      }));
+      
+      // 流水號補零至三位數
+      const serialNumber = newCounter.toString().padStart(3, '0');
+      
+      // 生成檔案名稱 (格式: CI_[assetSeq]_[itemId]_[serial].[ext])
+      const extension = getFileExtension(file.name);
+      const fileName = `CI_${assetSequence}_${itemId}_${serialNumber}.${extension}`;
+      
+      // 轉換成 base64
+      const base64Content = await fileToBase64(file);
+      
+      // 準備 API 參數
+      const attachmentData = {
+        fileName,
+        fileType: file.type,
+        fileContent: base64Content,
+        description: `檢查項目 ${itemId} 的照片`,
+        wonum: workOrderId,
+        checkItemId: itemId,
+        assetSeq: assetSequence,
+        photoSeq: serialNumber
+      };
+      
+      // 呼叫 API 上傳附件
+      const result = await uploadPmAttachment(attachmentData);
+      console.log('附件上傳結果:', result);
+      
+      // 繼續原有的邏輯：更新 UI 顯示
+      const updatedItems = checkItems.map(item => {
+        if (item.compositeId === activeItemId) {
+          return {
+            ...item,
+            media: [...item.media, {
+              id: `${Date.now()}`,
+              type: mediaType,
+              url
+            }]
+          };
+        }
+        return item;
+      });
+      
+      setCheckItems(updatedItems);
+      updateAssetGroupWithItems(updatedItems);
+      
+    } catch (error) {
+      console.error('上傳附件失敗:', error);
+      // 即使上傳失敗，仍然在本地顯示圖片
+      const updatedItems = checkItems.map(item => {
+        if (item.compositeId === activeItemId) {
+          return {
+            ...item,
+            media: [...item.media, {
+              id: `${Date.now()}`,
+              type: mediaType,
+              url
+            }]
+          };
+        }
+        return item;
+      });
+      
+      setCheckItems(updatedItems);
+      updateAssetGroupWithItems(updatedItems);
+    }
     
     e.target.value = '';
   };
@@ -397,6 +498,152 @@ const ActualCheck: React.FC<ActualCheckProps> = ({
     }
     return '';
   };
+
+  // 處理附件並將它們分配給對應的檢查項目
+  useEffect(() => {
+    if (attachments && attachments.length > 0 && checkItems.length > 0) {
+      // 添加除錯信息
+      console.log('附件數據:', attachments);
+      console.log('檢查項目數據:', checkItems);
+
+      const updatedItems = [...checkItems];
+      
+      // 輸出所有資產組的assetNum，方便除錯
+      console.log('可用的資產編號:');
+      const availableAssetNums = [...new Set(updatedItems.map(item => item.assetNum || 'Default'))];
+      console.log(availableAssetNums);
+      
+      // 將附件分配給對應的檢查項目
+      attachments.forEach(attachment => {
+        const { checkItemId, photoSeq } = attachment;
+        // 使用 let 來宣告 assetSeqToUse，以便我們可以修改它
+        let assetSeqToUse = attachment.assetSeq || '0';
+        console.log(`處理附件: ${attachment.fileName}, checkItemId: ${checkItemId}, assetSeq: ${assetSeqToUse}`);
+        
+        let targetItemId = checkItemId || '';
+        
+        // 嘗試從附件的數據中獲取正確的檢查項目ID
+        if (targetItemId.includes('.')) {
+          // 如果 checkItemId 包含副檔名，需要清理
+          targetItemId = targetItemId.split('.')[0];
+        }
+        
+        // 從fileName格式 CI_0_10_001.PNG 嘗試提取項目ID與資產序號
+        if (attachment.fileName) {
+          const parts = attachment.fileName.split('_');
+          if (parts.length >= 3 && parts[0] === 'CI') {
+            // 處理文件命名
+            const extractedAssetSeq = parts.length >= 4 ? parts[1] : '0';
+            const extractedItemId = parts.length >= 4 ? parts[2] : parts[1];
+            
+            console.log(`從檔名提取: 資產序號=${extractedAssetSeq}, 項目ID=${extractedItemId}`);
+            
+            // 當API返回的checkItemId為空或包含非數字字符時，使用從檔名提取的值
+            if (!targetItemId || !/^\d+$/.test(targetItemId)) {
+              targetItemId = extractedItemId;
+            }
+            
+            // 確保assetSeq有正確的值
+            if ((!assetSeqToUse || assetSeqToUse === '0') && extractedAssetSeq !== '0') {
+              // 使用從檔名提取的資產序號
+              assetSeqToUse = extractedAssetSeq;
+            }
+          }
+        }
+        
+        console.log(`最終使用的參數: 檢查項目ID=${targetItemId}, 資產序號=${assetSeqToUse}`);
+        
+        // 現在嘗試找出對應的檢查項目
+        if (targetItemId) {
+          // 映射資產序號到實際資產編號
+          // 假設assetSeq="1"對應第一個資產，assetSeq="2"對應第二個資產
+          const availableAssets = [...new Set(updatedItems.map(item => item.assetNum || 'Default'))].filter(num => 
+            num && num !== 'Default' && num !== 'Unknown'
+          );
+          availableAssets.sort(); // 確保有序
+          
+          // 根據assetSeq和可用資產數量來判斷應該使用哪個資產
+          let targetAssetNum = 'Default';
+          const seqNumber = parseInt(assetSeqToUse, 10);
+          
+          if (!isNaN(seqNumber) && seqNumber > 0 && availableAssets.length >= seqNumber) {
+            // assetSeq從1開始計數，陣列索引從0開始
+            targetAssetNum = availableAssets[seqNumber - 1];
+            console.log(`資產序號${assetSeqToUse}映射到資產編號: ${targetAssetNum}`);
+          } else if (assetSeqToUse === '0' && availableAssets.length > 0) {
+            // 如果assetSeq為0，預設使用第一個資產
+            targetAssetNum = availableAssets[0];
+            console.log(`資產序號0預設映射到第一個資產: ${targetAssetNum}`);
+          }
+          
+          console.log(`尋找檢查項目ID=${targetItemId}，目標資產=${targetAssetNum}`);
+          
+          // 嚴格匹配，優先嘗試ID和資產號都匹配
+          let itemIndex = updatedItems.findIndex(item => {
+            const idMatches = item.id === targetItemId;
+            const assetMatches = item.assetNum === targetAssetNum;
+            return idMatches && assetMatches;
+          });
+          
+          console.log(`嚴格匹配結果 (ID=${targetItemId} 和 資產=${targetAssetNum}): ${itemIndex}`);
+          
+          // 如果嚴格匹配失敗，根據不同情況進行備選匹配
+          if (itemIndex === -1) {
+            // 如果提供了明確的資產序號但找不到對應項，先嘗試用ID匹配任何資產
+            if (seqNumber > 0) {
+              // 嘗試在目標資產中找相同ID的任何項目
+              itemIndex = updatedItems.findIndex(item => 
+                item.id === targetItemId && item.assetNum === targetAssetNum
+              );
+              console.log(`在目標資產中按ID匹配: ${itemIndex}`);
+              
+              // 如果仍找不到，則嘗試在所有資產中按ID匹配
+              if (itemIndex === -1) {
+                itemIndex = updatedItems.findIndex(item => item.id === targetItemId);
+                console.log(`所有資產中按ID匹配: ${itemIndex}`);
+              }
+            } else {
+              // 如果assetSeq為0或未提供，直接按ID匹配
+              itemIndex = updatedItems.findIndex(item => item.id === targetItemId);
+              console.log(`僅按ID匹配: ${itemIndex}`);
+            }
+          }
+          
+          if (itemIndex !== -1) {
+            // 檢查該媒體是否已存在
+            const mediaExists = updatedItems[itemIndex].media.some(m => 
+              m.url === attachment.url || m.id === attachment.id.toString()
+            );
+            
+            if (!mediaExists) {
+              console.log(`添加附件到項目: ${updatedItems[itemIndex].id}, 資產: ${updatedItems[itemIndex].assetNum}`);
+              
+              // 判斷是圖片還是視頻
+              const isImage = /\.(jpg|jpeg|png|gif|bmp|webp)$/i.test(attachment.fileName);
+              const isVideo = /\.(mp4|webm|ogg|mov|avi)$/i.test(attachment.fileName);
+              
+              if (isImage || isVideo) {
+                updatedItems[itemIndex].media.push({
+                  id: attachment.id.toString(),
+                  type: isImage ? 'image' : 'video',
+                  url: attachment.url
+                });
+                
+                console.log('成功添加附件');
+              }
+            } else {
+              console.log('附件已存在，跳過');
+            }
+          } else {
+            console.log('沒有找到匹配的檢查項目，放棄處理此附件');
+          }
+        }
+      });
+      
+      setCheckItems(updatedItems);
+      updateAssetGroupWithItems(updatedItems);
+    }
+  }, [attachments, checkItems.length]);
 
   return (
     <div className="flex-1 overflow-auto bg-gray-50">
@@ -493,9 +740,9 @@ const ActualCheck: React.FC<ActualCheckProps> = ({
                         e.stopPropagation();
                         handleMarkAllAsChecked(group.assetNum);
                       }}
-                      className="bg-green-500 hover:bg-green-600 text-white px-2 py-1 rounded text-sm flex items-center"
+                      className="bg-green-500 hover:bg-green-600 text-white px-2 py-1 rounded text-xs flex items-center"
                     >
-                      <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                       </svg>
                       {group.checkItems.every(item => item.status === 'v') ? 'Unmark V' : 'All V'}
@@ -552,7 +799,7 @@ const ActualCheck: React.FC<ActualCheckProps> = ({
                             <div className="flex space-x-2">
                               <button
                                 onClick={() => handleStatusChange(item.id, item.assetNum || 'Default', 'v')}
-                                className={`rounded-md px-3 py-1 text-sm font-medium ${
+                                className={`rounded-md px-2 py-1 text-xs font-medium ${
                                   item.status === 'v'
                                     ? 'bg-green-500 text-white'
                                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -562,7 +809,7 @@ const ActualCheck: React.FC<ActualCheckProps> = ({
                               </button>
                               <button
                                 onClick={() => handleStatusChange(item.id, item.assetNum || 'Default', 'x')}
-                                className={`rounded-md px-3 py-1 text-sm font-medium ${
+                                className={`rounded-md px-2 py-1 text-xs font-medium ${
                                   item.status === 'x'
                                     ? 'bg-red-500 text-white'
                                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -572,7 +819,7 @@ const ActualCheck: React.FC<ActualCheckProps> = ({
                               </button>
                               <button
                                 onClick={() => handleStatusChange(item.id, item.assetNum || 'Default', 'na')}
-                                className={`rounded-md px-3 py-1 text-sm font-medium ${
+                                className={`rounded-md px-2 py-1 text-xs font-medium ${
                                   item.status === 'na'
                                     ? 'bg-gray-500 text-white'
                                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -606,18 +853,18 @@ const ActualCheck: React.FC<ActualCheckProps> = ({
                                 <div className="flex space-x-2">
                                   <button
                                     onClick={() => triggerFileInput(item.id, item.assetNum || 'Default', 'image')}
-                                    className="px-3 py-1 bg-blue-50 text-blue-600 rounded-md text-sm hover:bg-blue-100 flex items-center"
+                                    className="px-2 py-1 bg-blue-50 text-blue-600 rounded-md text-xs hover:bg-blue-100 flex items-center"
                                   >
-                                    <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                                     </svg>
                                     Upload Image
                                   </button>
                                   <button
                                     onClick={() => openCamera(item.id, item.assetNum || 'Default', 'image')}
-                                    className="px-3 py-1 bg-blue-50 text-blue-600 rounded-md text-sm hover:bg-blue-100 flex items-center"
+                                    className="px-2 py-1 bg-blue-50 text-blue-600 rounded-md text-xs hover:bg-blue-100 flex items-center"
                                   >
-                                    <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
                                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
                                     </svg>
@@ -625,9 +872,9 @@ const ActualCheck: React.FC<ActualCheckProps> = ({
                                   </button>
                                   <button
                                     onClick={() => triggerFileInput(item.id, item.assetNum || 'Default', 'video')}
-                                    className="px-3 py-1 bg-blue-50 text-blue-600 rounded-md text-sm hover:bg-blue-100 flex items-center"
+                                    className="px-2 py-1 bg-blue-50 text-blue-600 rounded-md text-xs hover:bg-blue-100 flex items-center"
                                   >
-                                    <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
                                     </svg>
                                     Upload Video

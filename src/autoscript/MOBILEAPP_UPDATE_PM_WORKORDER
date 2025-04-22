@@ -74,6 +74,36 @@ if (!wonum) {
             if (workOrderData.supervisor) {
                 workOrderMbo.setValue("supervisor", workOrderData.supervisor);
             }
+            
+            // 添加CM工單字段的處理
+            if (workOrderData.failureDetails) {
+                workOrderMbo.setValue("FAILUREREPORT", workOrderData.failureDetails);
+            }
+            
+            if (workOrderData.repairMethod) {
+                workOrderMbo.setValue("REPAIRFACILITIES", workOrderData.repairMethod);
+            }
+            
+            // 處理停機時間
+            if (workOrderData.downtimeHours != null || workOrderData.downtimeMinutes != null) {
+                var hours = workOrderData.downtimeHours || 0;
+                var minutes = workOrderData.downtimeMinutes || 0;
+                
+                // 計算總停機分鐘數
+                var totalMinutes = (parseInt(hours) * 60) + parseInt(minutes);
+                workOrderMbo.setValue("DOWNTIME", totalMinutes);
+                
+                logger.info(title + "設置停機時間: " + hours + " 小時 " + minutes + " 分鐘，總計 " + totalMinutes + " 分鐘");
+            }
+            
+            // 處理完成確認狀態
+            if (workOrderData.isCompleted != null) {
+                var isCompleted = workOrderData.isCompleted;
+                workOrderMbo.setValue("PROBLEMCODE", isCompleted ? "FIXED" : "");
+                
+                logger.info(title + "設置完成狀態: " + (isCompleted ? "已修復" : "未完成"));
+            }
+
             // 在MOBILEAPP_UPDATE_PM_WORKORDER腳本中添加
             if (workOrderData.startTime) {
                 var isoFormat = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'");

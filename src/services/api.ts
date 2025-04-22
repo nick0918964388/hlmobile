@@ -43,6 +43,8 @@ export interface PMWorkOrderDetail {
     materials: MaterialResource[];
     tools: ToolResource[];
   };
+  // 工單附件
+  attachments?: WorkOrderAttachment[];
 }
 
 // 定義CM工單資料介面
@@ -86,6 +88,12 @@ export interface CMWorkOrderDetail {
   owner?: string;       // 負責人
   lead?: string;        // 主導人員
   supervisor?: string;  // 監督人員
+  // Actual頁面欄位
+  failureDetails?: string;  // 故障描述
+  repairMethod?: string;    // 修復方法
+  isCompleted?: boolean;    // 完成確認
+  downtimeHours?: number;   // 停機時間(小時)
+  downtimeMinutes?: number; // 停機時間(分鐘)
   checkItems: CheckItem[];
   reportItems: ReportItem[];
   // 資源項目
@@ -208,6 +216,36 @@ export interface User {
   permissions?: string[];
 }
 
+// 定義PM檢查項目附件接口
+export interface PmAttachment {
+  fileName: string;
+  fileType: string;
+  fileContent: string;
+  description: string;
+  wonum: string;
+  checkItemId?: string;
+  assetSeq?: string;
+  photoSeq?: string;
+}
+
+// 定義工單附件介面
+export interface WorkOrderAttachment {
+  id: number;
+  fileName: string;
+  fileType: string;
+  url: string;
+  description?: string;
+  uploadDate?: string;
+  checkItemId?: string;
+  assetSeq?: string;
+  photoSeq?: string;
+}
+
+// 定義工單附件響應介面
+export interface AttachmentResponse {
+  items: WorkOrderAttachment[];
+}
+
 // 定義API返回的完整資料介面
 interface ApiData {
   pm: {
@@ -248,12 +286,12 @@ interface ApiData {
 
 // API環境配置
 const API_CONFIG = {
-  baseUrl: process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost',
+  baseUrl: process.env.NEXT_PUBLIC_API_BASE_URL || 'http://hl.webtw.xyz',
   maxApiPath: process.env.NEXT_PUBLIC_MAX_API_PATH || '/maximo/oslc/script',
   lean: process.env.NEXT_PUBLIC_API_LEAN !== 'false',
   headers: {
     'Content-Type': 'application/json',
-    'maxauth': process.env.NEXT_PUBLIC_MAX_AUTH || ''
+    'maxauth': process.env.NEXT_PUBLIC_MAX_AUTH || 'bWF4YWRtaW46emFxMXhzVzI='
   }
 };
 
@@ -443,6 +481,33 @@ export const pmApi = {
       try {
         const resources = await pmApi.getWorkOrderResources(id);
         detail.resources = resources;
+
+        // 模擬附件數據
+        detail.attachments = [
+          {
+            id: 101,
+            fileName: 'CI_1_10_001.jpg',
+            fileType: 'image/jpeg',
+            url: '/api/mock-images/photo1.jpg',
+            description: '檢查項目10的照片',
+            uploadDate: '2023-07-20T10:30:00',
+            checkItemId: '10',
+            assetSeq: '1',
+            photoSeq: '001'
+          },
+          {
+            id: 102,
+            fileName: 'CI_1_15_001.jpg',
+            fileType: 'image/jpeg',
+            url: '/api/mock-images/photo2.jpg',
+            description: '檢查項目15的照片',
+            uploadDate: '2023-07-20T10:35:00',
+            checkItemId: '15',
+            assetSeq: '1',
+            photoSeq: '001'
+          }
+        ];
+
       } catch (error) {
         console.error('Failed to fetch resources for work order:', id, error);
         // 失敗時不阻塞主要數據返回
@@ -452,12 +517,30 @@ export const pmApi = {
     }
     
     // 使用實際API
-    const url = buildApiUrl('MOBILEAPP_GET_PM_WORKORDER_DETAIL', { wonum: id });
-    const workOrderDetail = await apiRequest<PMWorkOrderDetail>(url);
-    
-    // resources 已整合到 MOBILEAPP_GET_PM_WORKORDER_DETAIL API 中，不需要再次獲取
-    
-    return workOrderDetail;
+    try {
+      console.log(`獲取工單(${id})詳情...`);
+      const url = buildApiUrl('MOBILEAPP_GET_PM_WORKORDER_DETAIL', { wonum: id });
+      const workOrderDetail = await apiRequest<PMWorkOrderDetail>(url);
+      console.log('工單詳情API響應:', workOrderDetail);
+      
+      // 如果沒有附件數據，獲取附件數據
+      if (!workOrderDetail.attachments) {
+        try {
+          console.log('正在獲取工單附件...');
+          const attachments = await pmApi.getWorkOrderAttachments(id);
+          workOrderDetail.attachments = attachments;
+          console.log(`成功獲取 ${attachments.length} 個附件`);
+        } catch (error) {
+          console.error('Failed to fetch attachments for work order:', id, error);
+          // 失敗時不阻塞主要數據返回
+        }
+      }
+      
+      return workOrderDetail;
+    } catch (error) {
+      console.error('獲取工單詳情失敗:', error);
+      throw error;
+    }
   },
   
   // 獲取PM工單的資源數據
@@ -646,6 +729,58 @@ export const pmApi = {
     // 使用實際API
     const url = buildApiUrl('MOBILEAPP_SUBMIT_PM_WORKORDER', { wonum: id });
     return apiRequest<PMWorkOrderDetail>(url, 'POST', { params: { comment } });
+  },
+
+  // 新增: 獲取PM工單的附件數據
+  getWorkOrderAttachments: async (id: string): Promise<WorkOrderAttachment[]> => {
+    // 判斷是否使用模擬資料
+    if (process.env.NEXT_PUBLIC_USE_MOCK_DATA === 'true') {
+      await simulateApiDelay();
+      
+      // 模擬附件數據
+      return [
+        {
+          id: 101,
+          fileName: 'CI_1_10_001.jpg',
+          fileType: 'image/jpeg',
+          url: '/api/mock-images/photo1.jpg',
+          description: '檢查項目10的照片',
+          uploadDate: '2023-07-20T10:30:00',
+          checkItemId: '10',
+          assetSeq: '1',
+          photoSeq: '001'
+        },
+        {
+          id: 102,
+          fileName: 'CI_1_15_001.jpg',
+          fileType: 'image/jpeg',
+          url: '/api/mock-images/photo2.jpg',
+          description: '檢查項目15的照片',
+          uploadDate: '2023-07-20T10:35:00',
+          checkItemId: '15',
+          assetSeq: '1',
+          photoSeq: '001'
+        }
+      ];
+    }
+    
+    // 使用實際API
+    try {
+      console.log(`正在獲取工單(${id})附件...`);
+      const url = buildApiUrl('MOBILEAPP_GET_PM_WORKORDER_ATTACHMENTS', { wonum: id });
+      console.log('附件API URL:', url);
+      
+      const response = await apiRequest<AttachmentResponse>(url);
+      console.log('附件API響應:', response);
+      
+      // 返回附件列表
+      const attachments = response.items || [];
+      console.log(`獲取到 ${attachments.length} 個附件`);
+      return attachments;
+    } catch (error) {
+      console.error('獲取附件失敗:', error);
+      return [];
+    }
   }
 };
 
@@ -830,7 +965,7 @@ export const cmApi = {
       
       return {
         id: newId,
-        status: 'waiting_approval',
+        status: 'WAPPR',
         created: new Date().toISOString().split('T')[0].replace(/-/g, '/') + ' ' + new Date().toTimeString().split(' ')[0].substring(0, 5),
         equipmentId: workOrder.equipmentId || '',
         equipmentName: workOrder.equipmentName || '',
@@ -877,9 +1012,13 @@ export const cmApi = {
       } as unknown as CMWorkOrderDetail;
     }
     
-    // 使用實際API
-    const url = buildApiUrl('MOBILEAPP_SAVE_CM_WORKORDER');
-    return apiRequest<CMWorkOrderDetail>(url, 'POST', workOrderData);
+    // 使用與PM工單相同的更新API
+    console.log('保存CM工單數據，使用PM更新API:', workOrderData);
+    const url = buildApiUrl('MOBILEAPP_UPDATE_PM_WORKORDER', { wonum: workOrderData.id });
+    
+    // 構建正確的請求體格式
+    const requestBody = { params: { workOrder: workOrderData } };
+    return apiRequest<CMWorkOrderDetail>(url, 'POST', requestBody);
   },
   
   // 保存CM工單單個欄位
@@ -887,21 +1026,53 @@ export const cmApi = {
     // 判斷是否使用模擬資料
     if (process.env.NEXT_PUBLIC_USE_MOCK_DATA === 'true') {
       await simulateApiDelay(300);
-      console.log('模擬保存CM工單單個欄位:', fieldData);
+      console.log('Simulating saving CM work order field - Original data:', JSON.stringify(fieldData));
+      
+      // 檢查是否有異常類型欄位並記錄
+      if ('abnormalType' in fieldData) {
+        console.log('Found abnormal type field value:', fieldData.abnormalType);
+        console.log('Abnormal type value type:', typeof fieldData.abnormalType);
+        console.log('Abnormal type value length:', fieldData.abnormalType.length);
+        
+        // 確保異常類型值不會被設置為空
+        if (!fieldData.abnormalType) {
+          console.log('Warning: Abnormal type value is empty');
+        }
+      }
       
       // 模擬返回更新後的工單詳情
-      return {
+      const result = {
         id: fieldData.id,
         status: 'WAPPR',
         ...fieldData,
         checkItems: [],
         reportItems: []
       } as unknown as CMWorkOrderDetail;
+      
+      console.log('Simulating saving CM work order field - Result:', JSON.stringify(result));
+      return result;
     }
     
     // 使用實際API
+    console.log('Preparing to call actual API to save field:', JSON.stringify(fieldData));
+    
+    // 檢查異常類型欄位 (如果存在)
+    if ('abnormalType' in fieldData) {
+      console.log('Preparing to save abnormal type:', fieldData.abnormalType);
+      
+      // 如果異常類型為空，拒絕保存
+      if (!fieldData.abnormalType) {
+        throw new Error('Abnormal type cannot be empty');
+      }
+    }
+    
     const url = buildApiUrl('MOBILEAPP_UPDATE_PM_WORKORDER', { wonum: fieldData.id });
-    return apiRequest<CMWorkOrderDetail>(url, 'POST', { params: { workOrder: fieldData } });
+    
+    // 構建正確的請求體，確保欄位被正確包裝
+    const requestBody = { params: { workOrder: fieldData } };
+    console.log('API request body:', JSON.stringify(requestBody));
+    
+    return apiRequest<CMWorkOrderDetail>(url, 'POST', requestBody);
   },
   
   // 獲取CM工單的資源數據
@@ -1124,6 +1295,20 @@ export const userApi = {
     const url = buildApiUrl('MOBILEAPP_GET_USER_GROUPS');
     return apiRequest<string[]>(url);
   }
+};
+
+// 檢查項目相關API功能
+export const uploadPmAttachment = async (attachment: PmAttachment): Promise<any> => {
+  // 判斷是否使用模擬資料
+  if (process.env.NEXT_PUBLIC_USE_MOCK_DATA === 'true') {
+    await simulateApiDelay(1000);
+    console.log('模擬上傳附件:', attachment.fileName);
+    return { success: true, message: '附件上傳成功' };
+  }
+  
+  // 使用實際API
+  const url = buildApiUrl('MOBILEAPP_UPLOAD_PM_ATTACHMENT');
+  return apiRequest(url, 'POST', { params: { attachment } });
 };
 
 // 匯出API服務

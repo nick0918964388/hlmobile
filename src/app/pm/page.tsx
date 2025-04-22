@@ -42,7 +42,11 @@ export default function PMListPage() {
   // 篩選顯示的工單
   const filteredOrders = workOrders.filter(order => {
     // 根據頁籤篩選
-    if (activeTab === 'waiting' && order.status !== 'WAPPR') {
+    if (activeTab === 'waiting' && order.status !== 'APPR') {
+      return false;
+    }
+    
+    if (activeTab === 'current' && order.status !== 'WSCH' && order.status !== 'WAPPR') {
       return false;
     }
 
@@ -67,12 +71,12 @@ export default function PMListPage() {
   // 翻譯
   const translations = {
     currentReports: {
-      zh: '當前工單',
-      en: 'Current Reports'
+      zh: '等待排程',
+      en: 'Waiting to be Scheduled'
     },
     waitingForApproval: {
-      zh: '等待核准',
-      en: 'Waiting for Approval'
+      zh: '已核准待提交',
+      en: 'Approved wait submit'
     },
     searchPlaceholder: {
       zh: '搜尋工單號碼、設備ID或描述',

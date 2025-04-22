@@ -25,21 +25,22 @@ interface LaborHour {
 
 interface WorkReportProps {
   workOrderId: string;
-  onCompleteStatusChange?: (isComplete: boolean, updatedResources?: {
+  onCompleteStatusChange?: (isComplete: boolean, resources?: {
     labor: LaborResource[];
     materials: MaterialResource[];
     tools: ToolResource[];
     hasNewResources?: boolean;
   }) => void;
+  onFormChange?: (isDirty: boolean) => void;
   initialReportItems?: ReportItem[];
   resources?: {
-    labor?: LaborResource[];
-    materials?: MaterialResource[];
-    tools?: ToolResource[];
+    labor: LaborResource[];
+    materials: MaterialResource[];
+    tools: ToolResource[];
   };
 }
 
-const WorkReport: React.FC<WorkReportProps> = ({ workOrderId, onCompleteStatusChange, initialReportItems, resources }) => {
+const WorkReport: React.FC<WorkReportProps> = ({ workOrderId, onCompleteStatusChange, onFormChange, initialReportItems, resources }) => {
   const { language } = useLanguage();
   const [materials, setMaterials] = useState<Material[]>([]);
   const [tools, setTools] = useState<Tool[]>([]);
@@ -59,6 +60,20 @@ const WorkReport: React.FC<WorkReportProps> = ({ workOrderId, onCompleteStatusCh
   
   // 用來記錄上一次的資源數據快照
   const prevResourcesRef = useRef<string>('');
+
+  // 追蹤資源原始狀態
+  const initialResourcesRef = useRef<string>('');
+
+  // 用於追蹤已刪除的資源
+  const [deletedResources, setDeletedResources] = useState<{
+    labor: LaborResource[],
+    materials: MaterialResource[],
+    tools: ToolResource[]
+  }>({
+    labor: [],
+    materials: [],
+    tools: []
+  });
 
   // 模擬材料列表
   const materialList = [
@@ -238,6 +253,50 @@ const WorkReport: React.FC<WorkReportProps> = ({ workOrderId, onCompleteStatusCh
     }
   }, [workOrderId, resources]);
 
+  // 初始化時記錄原始資源狀態
+  useEffect(() => {
+    if (resources) {
+      const resourcesSnapshot = JSON.stringify({
+        labor: resources.labor || [],
+        materials: resources.materials || [],
+        tools: resources.tools || []
+      });
+      initialResourcesRef.current = resourcesSnapshot;
+      
+      // 檢查初始化的資源狀態，判斷是否已有新資源
+      const currentResourcesSnapshot = JSON.stringify({
+        labor: laborHours,
+        materials: materials,
+        tools: tools
+      });
+      
+      // 如果當前資源與初始資源不同，通知父組件表單已變更
+      onFormChange?.(currentResourcesSnapshot !== initialResourcesRef.current);
+    }
+  }, [resources]);
+  
+  // 監測資源變更
+  useEffect(() => {
+    // 這裡可能已經有一個監測新資源的useEffect
+    // 在現有的代碼裡面，在適當的地方加入以下內容：
+    
+    // 如果initialResourcesRef.current為空，表示尚未初始化過，跳過檢查
+    if (!initialResourcesRef.current) return;
+    
+    const currentResourcesSnapshot = JSON.stringify({
+      labor: laborHours,
+      materials: materials,
+      tools: tools
+    });
+    
+    // 檢查資源是否有變更
+    const isDirty = currentResourcesSnapshot !== initialResourcesRef.current;
+    
+    // 通知父組件表單變更狀態
+    onFormChange?.(isDirty);
+    
+  }, [laborHours, materials, tools, onFormChange]);
+
   // 當資料變更時，儲存到 localStorage
   useEffect(() => {
     const dataToSave = {
@@ -319,59 +378,17 @@ const WorkReport: React.FC<WorkReportProps> = ({ workOrderId, onCompleteStatusCh
         })
       };
       
-      // 獲取已刪除的資源
-      if (prevResourcesRef.current) {
-        // 處理已刪除的勞工資源
-        const deletedLabor: LaborResource[] = prevResources.laborHours
-          .filter((prevLabor: LaborHour) => !laborHours.some(labor => labor.id === prevLabor.id))
-          .map((labor: LaborHour) => ({
-            id: labor.id,
-            name: labor.staffName,
-            laborCode: labor.staffId,
-            craftType: '',
-            hours: labor.hours,
-            rate: 0,
-            cost: 0,
-            status: 'delete' as const
-          }));
-        
-        if (deletedLabor.length > 0) {
-          updatedResources.labor = [...updatedResources.labor, ...deletedLabor];
-        }
-        
-        // 處理已刪除的物料資源
-        const deletedMaterials: MaterialResource[] = prevResources.materials
-          .filter((prevMaterial: Material) => !materials.some(material => material.id === prevMaterial.id))
-          .map((material: Material) => ({
-            id: material.id,
-            itemNum: material.code,
-            name: material.name,
-            description: material.name,
-            quantity: material.quantity,
-            unitCost: 0,
-            totalCost: 0,
-            status: 'delete' as const
-          }));
-          
-        if (deletedMaterials.length > 0) {
-          updatedResources.materials = [...updatedResources.materials, ...deletedMaterials];
-        }
-        
-        // 處理已刪除的工具資源
-        const deletedTools: ToolResource[] = prevResources.tools
-          .filter((prevTool: Tool) => !tools.some(tool => tool.id === prevTool.id))
-          .map((tool: Tool) => ({
-            id: tool.id,
-            toolCode: tool.code,
-            name: tool.name,
-            description: tool.name,
-            quantity: tool.quantity,
-            status: 'delete' as const
-          }));
-          
-        if (deletedTools.length > 0) {
-          updatedResources.tools = [...updatedResources.tools, ...deletedTools];
-        }
+      // 合併已刪除的資源到更新資源列表中
+      if (deletedResources.labor.length > 0) {
+        updatedResources.labor = [...updatedResources.labor, ...deletedResources.labor];
+      }
+      
+      if (deletedResources.materials.length > 0) {
+        updatedResources.materials = [...updatedResources.materials, ...deletedResources.materials];
+      }
+      
+      if (deletedResources.tools.length > 0) {
+        updatedResources.tools = [...updatedResources.tools, ...deletedResources.tools];
       }
       
       // 檢查是否有新增的材料或工具
@@ -387,7 +404,7 @@ const WorkReport: React.FC<WorkReportProps> = ({ workOrderId, onCompleteStatusCh
         hasNewResources: hasNewMaterials || hasNewTools
       });
     }
-  }, [materials, tools, laborHours, reportItems, workOrderId, onCompleteStatusChange]);
+  }, [materials, tools, laborHours, reportItems, workOrderId, onCompleteStatusChange, deletedResources]);
 
   // 清除提示
   const dismissWarning = () => {
@@ -433,16 +450,77 @@ const WorkReport: React.FC<WorkReportProps> = ({ workOrderId, onCompleteStatusCh
     }
   };
 
+  const handleRemoveLabor = (id: string) => {
+    // 從現有勞工列表中找到要刪除的勞工資料
+    const laborToRemove = laborHours.find(item => item.id === id);
+    
+    if (laborToRemove) {
+      // 將要刪除的勞工添加到已刪除資源列表中，並標記為刪除狀態
+      setDeletedResources(prev => ({
+        ...prev,
+        labor: [...prev.labor, {
+          id: laborToRemove.id,
+          name: laborToRemove.staffName,
+          laborCode: laborToRemove.staffId,
+          craftType: '',
+          hours: laborToRemove.hours,
+          rate: 0,
+          cost: 0,
+          status: 'delete' as const
+        }]
+      }));
+    }
+    
+    // 從現有列表中移除
+    setLaborHours(laborHours.filter(item => item.id !== id));
+  };
+
   const handleRemoveMaterial = (id: string) => {
+    // 從現有材料列表中找到要刪除的材料資料
+    const materialToRemove = materials.find(item => item.id === id);
+    
+    if (materialToRemove) {
+      // 將要刪除的材料添加到已刪除資源列表中，並標記為刪除狀態
+      setDeletedResources(prev => ({
+        ...prev,
+        materials: [...prev.materials, {
+          id: materialToRemove.id,
+          itemNum: materialToRemove.code,
+          name: materialToRemove.name,
+          description: materialToRemove.name,
+          quantity: materialToRemove.quantity,
+          unitCost: 0,
+          totalCost: 0,
+          status: 'delete' as const
+        }]
+      }));
+    }
+    
+    // 從現有列表中移除
     setMaterials(materials.filter(item => item.id !== id));
   };
 
   const handleRemoveTool = (id: string) => {
+    // 從現有工具列表中找到要刪除的工具資料
+    const toolToRemove = tools.find(item => item.id === id);
+    
+    if (toolToRemove) {
+      // 將要刪除的工具添加到已刪除資源列表中，並標記為刪除狀態
+      setDeletedResources(prev => ({
+        ...prev,
+        tools: [...prev.tools, {
+          id: toolToRemove.id,
+          toolCode: toolToRemove.code,
+          name: toolToRemove.name,
+          description: toolToRemove.name,
+          quantity: toolToRemove.quantity,
+          status: 'delete' as const
+        }]
+      }));
+    }
+    
+    // 從現有列表中移除
     setTools(tools.filter(item => item.id !== id));
-  };
-
-  const handleRemoveLabor = (id: string) => {
-    setLaborHours(laborHours.filter(item => item.id !== id));
   };
 
   const handleMaterialChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -589,9 +667,12 @@ const WorkReport: React.FC<WorkReportProps> = ({ workOrderId, onCompleteStatusCh
                 <td className="px-4 py-3 whitespace-nowrap text-sm">{material.name}</td>
                 <td className="px-4 py-3 whitespace-nowrap text-sm">{material.quantity}</td>
                 <td className="px-4 py-3 whitespace-nowrap text-sm">
-                  <span className="text-gray-400 cursor-not-allowed" title="不允許刪除材料">
+                  <button
+                    onClick={() => handleRemoveMaterial(material.id)}
+                    className="text-red-600 hover:text-red-800"
+                  >
                     {t('remove')}
-                  </span>
+                  </button>
                 </td>
               </tr>
             ))}
@@ -636,9 +717,12 @@ const WorkReport: React.FC<WorkReportProps> = ({ workOrderId, onCompleteStatusCh
                 <td className="px-4 py-3 whitespace-nowrap text-sm">{tool.name}</td>
                 <td className="px-4 py-3 whitespace-nowrap text-sm">{tool.quantity}</td>
                 <td className="px-4 py-3 whitespace-nowrap text-sm">
-                  <span className="text-gray-400 cursor-not-allowed" title="不允許刪除工具">
+                  <button
+                    onClick={() => handleRemoveTool(tool.id)}
+                    className="text-red-600 hover:text-red-800"
+                  >
                     {t('remove')}
-                  </span>
+                  </button>
                 </td>
               </tr>
             ))}

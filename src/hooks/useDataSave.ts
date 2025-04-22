@@ -108,11 +108,14 @@ export function useDataSave<T extends Record<string, any>>({
         throw new Error('需要提供 onSave 或 endpoint 參數');
       }
 
+      // 保存成功後，更新原始資料並重置isDirty狀態
       setOriginalData(data);
       setIsDirty(false);
     } catch (err) {
+      // 保存失敗時，設置錯誤狀態但不改變isDirty，讓按鈕保持可點擊
       setError(err instanceof Error ? err : new Error('保存資料時發生未知錯誤'));
       console.error('保存資料失敗:', err);
+      // 不設置 setIsDirty(false)，讓按鈕保持可點擊狀態
     } finally {
       setIsSaving(false);
     }

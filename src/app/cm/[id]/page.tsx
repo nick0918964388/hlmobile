@@ -100,6 +100,38 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
     }
   };
 
+  // 新增Actual表單變更處理函數
+  const [actualFormChanged, setActualFormChanged] = useState(false);
+  
+  // 新增Report頁表單狀態變更追蹤
+  const [reportFormChanged, setReportFormChanged] = useState(false);
+  
+  // 新增狀態來儲存Actual頁面的表單數據
+  const [actualFormData, setActualFormData] = useState<{
+    failureDetails: string;
+    repairMethod: string;
+    isCompleted: boolean;
+    downtimeHours: number | string;
+    downtimeMinutes: number | string;
+  }>({
+    failureDetails: '',
+    repairMethod: '',
+    isCompleted: false,
+    downtimeHours: 0,
+    downtimeMinutes: 0
+  });
+
+  // 新增資源數據狀態
+  const [resourcesData, setResourcesData] = useState<{
+    labor: any[];
+    materials: any[];
+    tools: any[];
+  }>({
+    labor: [],
+    materials: [],
+    tools: []
+  });
+
   // 從API獲取工單詳情數據
   useEffect(() => {
     const fetchWorkOrderDetails = async () => {
@@ -152,7 +184,29 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
           };
           
           setSelectedStaff(staffData);
-          setOriginalStaff({...staffData});
+          setOriginalStaff(staffData);
+          
+          // 設置Actual頁面的表單數據
+          if (response.failureDetails !== undefined || 
+              response.repairMethod !== undefined || 
+              response.downtimeHours !== undefined ||
+              response.downtimeMinutes !== undefined) {
+            console.log("設置Actual表單數據:", {
+              failureDetails: response.failureDetails,
+              repairMethod: response.repairMethod,
+              isCompleted: response.isCompleted,
+              downtimeHours: response.downtimeHours,
+              downtimeMinutes: response.downtimeMinutes
+            });
+            
+            setActualFormData({
+              failureDetails: response.failureDetails || '',
+              repairMethod: response.repairMethod || '',
+              isCompleted: response.isCompleted || false,
+              downtimeHours: response.downtimeHours || 0,
+              downtimeMinutes: response.downtimeMinutes || 0
+            });
+          }
           
           // 獲取設備選項和人員列表
           const fetchAdditionalData = async () => {
@@ -219,20 +273,84 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
 
   // 監控數據變更狀態
   useEffect(() => {
-    // 檢查人員數據是否變更
-    const isStaffChanged = JSON.stringify(selectedStaff) !== JSON.stringify(originalStaff);
+    // 使用 requestAnimationFrame 確保在一個渲染周期後再檢查
+    // 這樣即使其他 useState 更新後觸發了這個 effect，也能確保最新的 save 操作優先
+    const checkChanges = () => {
+      // 檢查人員數據是否變更
+      const isStaffChanged = JSON.stringify(selectedStaff) !== JSON.stringify(originalStaff);
+      
+      // 檢查時間數據是否變更
+      const isTimeChanged = startTime !== originalStartTime || endTime !== originalEndTime;
+      
+      // 檢查可編輯欄位是否變更
+      const isFieldsChanged = JSON.stringify(editableFields) !== JSON.stringify(originalEditableFields);
+      
+      // 如果是保存操作剛剛完成（isDirty 為 false），則不要覆蓋它
+      if (!isDirty && (isStaffChanged || isTimeChanged || isFieldsChanged || actualFormChanged || reportFormChanged)) {
+        // 這可能是由於剛剛進行了數據重置或保存操作
+        // 我們應該延遲執行對 isDirty 的更新，確保保存操作的設置優先
+        return;
+      }
+      
+      // 更新整體數據變更狀態 (實際組件的變更狀態由handleActualFormChange控制)
+      if (activeTab === 'info') {
+        setIsDirty(isStaffChanged || isTimeChanged || isFieldsChanged);
+      } else if (activeTab === 'actual') {
+        setIsDirty(actualFormChanged);
+      } else if (activeTab === 'report') {
+        setIsDirty(reportFormChanged);
+      }
+    };
     
-    // 檢查時間數據是否變更
-    const isTimeChanged = startTime !== originalStartTime || endTime !== originalEndTime;
+    // 使用下一次渲染幀來執行檢查
+    const frameId = requestAnimationFrame(checkChanges);
     
-    // 檢查可編輯欄位是否變更
-    const isFieldsChanged = JSON.stringify(editableFields) !== JSON.stringify(originalEditableFields);
+    // 清理函數
+    return () => cancelAnimationFrame(frameId);
+  }, [
+    selectedStaff, 
+    startTime, 
+    endTime, 
+    editableFields, 
+    originalStaff, 
+    originalStartTime, 
+    originalEndTime, 
+    originalEditableFields, 
+    activeTab, 
+    actualFormChanged,
+    reportFormChanged,
+    isDirty // 加入 isDirty 作為依賴，這樣可以檢測它的變化
+  ]);
+
+  const handleActualFormChange = (isDirty: boolean) => {
+    setActualFormChanged(isDirty);
     
-    // 檢查資源是否變更 (根據情況判斷)
+    // 當在actual頁簽時，直接使用actual表單的變更狀態
+    if (activeTab === 'actual') {
+      setIsDirty(isDirty);
+    }
+  };
+  
+  // 處理Report頁表單變更
+  const handleReportFormChange = (isDirty: boolean) => {
+    setReportFormChanged(isDirty);
     
-    // 更新整體數據變更狀態
-    setIsDirty(isStaffChanged || isTimeChanged || isFieldsChanged);
-  }, [selectedStaff, startTime, endTime, editableFields, originalStaff, originalStartTime, originalEndTime, originalEditableFields]);
+    // 當在report頁簽時，直接使用report表單的變更狀態
+    if (activeTab === 'report') {
+      setIsDirty(isDirty);
+    }
+  };
+  
+  // 處理Actual表單數據變更
+  const handleActualFormDataChange = (formData: {
+    failureDetails: string;
+    repairMethod: string;
+    isCompleted: boolean;
+    downtimeHours: number | string;
+    downtimeMinutes: number | string;
+  }) => {
+    setActualFormData(formData);
+  };
 
   // 工單狀態翻譯
   const statusTranslations = {
@@ -243,6 +361,10 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
     WMATL: {
       zh: '等待物料',
       en: 'Waiting for Material'
+    },
+    WSCH: {
+      zh: '等待排程',
+      en: 'Waiting to be Scheduled'
     },
     WSCHED: {
       zh: '等待排程',
@@ -443,26 +565,48 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
         endTime: formatDateToISO(endTime),
         owner: selectedStaff.owner,
         lead: selectedStaff.lead,
-        supervisor: selectedStaff.supervisor
+        supervisor: selectedStaff.supervisor,
+        // 添加Actual頁面的表單數據
+        failureDetails: actualFormData.failureDetails,
+        repairMethod: actualFormData.repairMethod,
+        downtimeHours: actualFormData.downtimeHours,
+        downtimeMinutes: actualFormData.downtimeMinutes,
+        isCompleted: actualFormData.isCompleted,
+        // 添加Report頁面的資源數據
+        resources: resourcesData
       };
+      
+      console.log('保存CM工單數據:', saveData);
       
       // 調用API保存數據
       const result = await api.cm.saveWorkOrder(saveData);
       
-      // 保存成功後，更新原始數據狀態
+      // 保存成功後，先更新原始數據狀態
+      // 這樣當 useEffect 執行時，比較新舊數據會得出「沒有變更」的結果
       setOriginalEditableFields({...editableFields});
       setOriginalStaff({...selectedStaff});
       setOriginalStartTime(startTime);
       setOriginalEndTime(endTime);
       
-      // 重置變更狀態
+      // 確保 useState 是同步的
+      const updatedOriginalFields = {...editableFields};
+      const updatedOriginalStaff = {...selectedStaff};
+      const updatedOriginalStartTime = startTime;
+      const updatedOriginalEndTime = endTime;
+      
+      // 直接設置所有變更狀態為 false
       setIsDirty(false);
+      setActualFormChanged(false);
+      setReportFormChanged(false);
       
       // 顯示成功訊息
       alert(language === 'zh' ? '保存成功' : 'Save successful');
     } catch (error) {
       console.error('Error saving work order:', error);
+      // 保存失敗時，顯示錯誤訊息，但不重置isDirty狀態
+      // 這樣保存按鈕仍然可以點擊，用戶可以重試
       alert(language === 'zh' ? '保存失敗，請重試' : 'Save failed, please try again');
+      // 不設置 setIsDirty(false)，按鈕保持可點擊狀態
     }
   };
 
@@ -474,8 +618,23 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
     setLanguage(language === 'zh' ? 'en' : 'zh');
   };
 
-  const handleResourceCompleteChange = (isComplete: boolean) => {
+  const handleResourceCompleteChange = (isComplete: boolean, resources?: {
+    labor: any[];
+    materials: any[];
+    tools: any[];
+    hasNewResources?: boolean;
+  }) => {
     setResourceComplete(isComplete);
+    
+    // 保存資源數據
+    if (resources) {
+      console.log('接收到Report頁資源數據:', resources);
+      setResourcesData({
+        labor: resources.labor || [],
+        materials: resources.materials || [],
+        tools: resources.tools || []
+      });
+    }
   };
 
   const handleActualCheckCompleteChange = (isComplete: boolean) => {
@@ -496,6 +655,7 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
     switch (workOrder.status) {
       case 'WAPPR':
       case 'WMATL':
+      case 'WSCH':
       case 'WSCHED':
       case 'WPCOND':
         return 'bg-yellow-500';
@@ -525,11 +685,30 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
   // 保存單個欄位並關閉編輯
   const saveField = async (field: 'description' | 'assets' | 'abnormalType') => {
     try {
+      // 印出當前欄位的值，以便檢查
+      console.log(`Saving field ${field} with value:`, editableFields[field]);
+      
+      // 特別處理 abnormalType 欄位
+      if (field === 'abnormalType') {
+        console.log('Special handling for abnormal type field:', editableFields.abnormalType);
+        if (!editableFields.abnormalType) {
+          alert(language === 'zh' ? '請選擇異常類型' : 'Please select an abnormal type');
+          return;
+        }
+      }
+      
+      // 確保值不為undefined
+      const fieldValue = editableFields[field] || '';
+      
       // 準備要保存的欄位數據
       const fieldData = {
         id: params.id,
-        [field]: editableFields[field]
+        [field]: fieldValue
       };
+      
+      // 印出將發送的數據
+      console.log('Data being sent to API:', fieldData);
+      console.log('Field value type:', typeof fieldValue);
       
       // 調用API保存特定欄位
       await api.cm.saveWorkOrderField(fieldData);
@@ -537,25 +716,30 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
       // 關閉編輯狀態
       setEditing({...editing, [field]: false});
       
-      // 更新原始欄位值
-      setOriginalEditableFields({
+      // 先保存當前的值，確保後續操作使用的是更新後的值
+      const updatedFields = {
         ...originalEditableFields,
-        [field]: editableFields[field]
-      });
+        [field]: fieldValue
+      };
+      
+      // 更新原始欄位值
+      setOriginalEditableFields(updatedFields);
       
       // 檢查是否還有其他未保存的變更
       const hasOtherChanges = 
-        JSON.stringify({
-          ...originalEditableFields,
-          [field]: editableFields[field]
-        }) !== JSON.stringify(editableFields) ||
+        JSON.stringify(updatedFields) !== JSON.stringify(editableFields) ||
         JSON.stringify(selectedStaff) !== JSON.stringify(originalStaff) ||
         JSON.stringify(startTime) !== JSON.stringify(originalStartTime) ||
         JSON.stringify(endTime) !== JSON.stringify(originalEndTime);
       
+      // 如果已經沒有變更，設置 isDirty 為 false
       setIsDirty(hasOtherChanges);
+      
+      // 操作成功的提示
+      console.log(`Field ${field} saved successfully with value: "${fieldValue}"`);
+      
     } catch (error) {
-      console.error(`保存欄位 ${field} 失敗:`, error);
+      console.error(`Failed to save field ${field}:`, error);
       alert(language === 'zh' ? `保存失敗，請重試` : `Save failed, please try again`);
     }
   };
@@ -845,15 +1029,22 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
                       <select
                         className="w-full border rounded-md px-3 py-2 focus:outline-none focus:border-blue-500"
                         value={editableFields.abnormalType}
-                        onChange={(e) => setEditableFields({...editableFields, abnormalType: e.target.value})}
+                        onChange={(e) => {
+                          console.log('選擇異常類型值:', e.target.value);
+                          setEditableFields({...editableFields, abnormalType: e.target.value});
+                        }}
                         autoFocus
                       >
+                        <option value="">Please select abnormal type</option>
                         {abnormalOptions.map(option => (
                           <option key={option} value={option}>
                             {option}
                           </option>
                         ))}
                       </select>
+                      <div className="mt-1 text-xs text-gray-500">
+                        Current selected: {editableFields.abnormalType || '(None)'}
+                      </div>
                       <div className="flex justify-end space-x-2 mt-2">
                         <button 
                           className="px-2 py-1 text-sm bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
@@ -863,7 +1054,10 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
                         </button>
                         <button 
                           className="px-2 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600"
-                          onClick={() => saveField('abnormalType')}
+                          onClick={() => {
+                            console.log('點擊保存按鈕，異常類型值:', editableFields.abnormalType);
+                            saveField('abnormalType');
+                          }}
                         >
                           {t('save')}
                         </button>
@@ -875,7 +1069,7 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
                       onClick={() => setEditing({...editing, abnormalType: true})}
                     >
                       <div className="flex-1">
-                        {editableFields.abnormalType}
+                        {editableFields.abnormalType || '(Please select abnormal type)'}
                       </div>
                       <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
@@ -980,7 +1174,7 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
                   </button>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm text-gray-600 mb-1">
                     {t('startTime')}
@@ -990,7 +1184,7 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
                   </label>
                   <input
                     type="datetime-local"
-                    className={`w-full border rounded px-3 py-2 focus:ring-1 ${
+                    className={`w-full border rounded px-3 py-3 text-base focus:ring-1 ${
                       startTime 
                         ? 'border-green-500 focus:border-green-500 focus:ring-green-500' 
                         : 'border-gray-300 focus:border-blue-500 focus:ring-blue-500'
@@ -1008,7 +1202,7 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
                   </label>
                   <input
                     type="datetime-local"
-                    className={`w-full border rounded px-3 py-2 focus:ring-1 ${
+                    className={`w-full border rounded px-3 py-3 text-base focus:ring-1 ${
                       endTime 
                         ? 'border-green-500 focus:border-green-500 focus:ring-green-500' 
                         : 'border-gray-300 focus:border-blue-500 focus:ring-blue-500'
@@ -1099,14 +1293,36 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
         )}
 
         {/* ActualCheck 元件 */}
-        {activeTab === 'actual' && <CMActual cmId={params.id} onCompleteStatusChange={handleActualCheckCompleteChange} />}
+        {activeTab === 'actual' && (
+          <CMActual 
+            cmId={params.id} 
+            onCompleteStatusChange={handleActualCheckCompleteChange}
+            onFormChange={handleActualFormChange}
+            onFormDataChange={handleActualFormDataChange}
+            initialData={workOrder ? {
+              failureDetails: workOrder.failureDetails,
+              repairMethod: workOrder.repairMethod,
+              isCompleted: workOrder.isCompleted,
+              downtimeHours: workOrder.downtimeHours,
+              downtimeMinutes: workOrder.downtimeMinutes
+            } : undefined}
+          />
+        )}
 
         {/* Resource 頁面 */}
-        {activeTab === 'report' && <WorkReport workOrderId={params.id} onCompleteStatusChange={handleResourceCompleteChange} />}
+        {activeTab === 'report' && (
+          <WorkReport 
+            workOrderId={params.id}
+            onCompleteStatusChange={handleResourceCompleteChange}
+            onFormChange={handleReportFormChange}
+            resources={workOrder?.resources}
+            initialReportItems={workOrder?.reportItems}
+          />
+        )}
       </div>
 
       {/* 底部空白區，防止內容被固定的底部標籤頁遮擋 */}
-      <div className="h-16"></div>
+      <div className="h-24"></div>
 
       {/* 底部固定按鈕 */}
       <div className="flex-none bg-blue-600 text-white fixed bottom-0 left-0 right-0">

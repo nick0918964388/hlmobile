@@ -60,6 +60,10 @@ export default function PMDetailPage({ params }: { params: { id: string } }) {
         const data = await api.pm.getWorkOrderDetail(params.id);
         setWorkOrder(data);
         
+        // 輸出附件數據，用於診斷
+        console.log('工單詳情:', data);
+        console.log('附件數據:', data.attachments);
+        
         // 設置人員數據，如果API中有相應的欄位
         if (data) {
           const staffData = {
@@ -369,7 +373,10 @@ export default function PMDetailPage({ params }: { params: { id: string } }) {
       alert(language === 'zh' ? '工單已成功保存！' : 'Work order saved successfully!');
     } catch (error) {
       console.error('Error saving work order:', error);
+      // 保存失敗時，顯示錯誤訊息，但不重置isDirty狀態
+      // 這樣保存按鈕仍然可以點擊，用戶可以重試
       alert(language === 'zh' ? '保存工單失敗，請重試。' : 'Failed to save work order. Please try again.');
+      // 不設置 setIsDirty(false)，保持按鈕可點擊狀態
     }
   };
 
@@ -702,7 +709,7 @@ export default function PMDetailPage({ params }: { params: { id: string } }) {
                   </button>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm text-gray-600 mb-1">
                     Start Time
@@ -712,7 +719,7 @@ export default function PMDetailPage({ params }: { params: { id: string } }) {
                   </label>
                   <input
                     type="datetime-local"
-                    className={`w-full border rounded px-3 py-2 focus:ring-1 ${
+                    className={`w-full border rounded px-3 py-3 text-base focus:ring-1 ${
                       maintenanceTime.startDate 
                         ? 'border-green-500 focus:border-green-500 focus:ring-green-500' 
                         : 'border-gray-300 focus:border-blue-500 focus:ring-blue-500'
@@ -730,7 +737,7 @@ export default function PMDetailPage({ params }: { params: { id: string } }) {
                   </label>
                   <input
                     type="datetime-local"
-                    className={`w-full border rounded px-3 py-2 focus:ring-1 ${
+                    className={`w-full border rounded px-3 py-3 text-base focus:ring-1 ${
                       maintenanceTime.endDate 
                         ? 'border-green-500 focus:border-green-500 focus:ring-green-500' 
                         : 'border-gray-300 focus:border-blue-500 focus:ring-blue-500'
@@ -821,7 +828,10 @@ export default function PMDetailPage({ params }: { params: { id: string } }) {
           <ActualCheck 
             workOrderId={params.id} 
             onCompleteStatusChange={handleActualCheckCompleteChange}
-            initialCheckItems={workOrder.checkItems} 
+            initialCheckItems={workOrder.checkItems}
+            assets={workOrder.assets}
+            route={workOrder.route}
+            attachments={workOrder.attachments}
           />
         )}
 
@@ -837,7 +847,7 @@ export default function PMDetailPage({ params }: { params: { id: string } }) {
       </div>
 
       {/* 底部空白區，防止內容被固定的底部標籤頁遮擋 */}
-      <div className="h-16"></div>
+      <div className="h-24"></div>
 
       {/* 底部固定按鈕 */}
       <div className="flex-none bg-blue-600 text-white fixed bottom-0 left-0 right-0">
