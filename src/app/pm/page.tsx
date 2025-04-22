@@ -10,7 +10,7 @@ import api, { PMWorkOrder } from '@/services/api';
 
 export default function PMListPage() {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<'current' | 'waiting'>('current');
+  const [activeTab, setActiveTab] = useState<'approved' | 'inprogress' | 'others'>('approved');
   const [showSidebar, setShowSidebar] = useState(false);
   const mainContentRef = useRef<HTMLDivElement>(null);
   const { language } = useLanguage();
@@ -42,11 +42,13 @@ export default function PMListPage() {
   // 篩選顯示的工單
   const filteredOrders = workOrders.filter(order => {
     // 根據頁籤篩選
-    if (activeTab === 'waiting' && order.status !== 'APPR') {
+    if (activeTab === 'approved' && order.status !== 'APPR') {
       return false;
     }
-    
-    if (activeTab === 'current' && order.status !== 'WSCH' && order.status !== 'WAPPR') {
+    if (activeTab === 'inprogress' && order.status !== 'INPRG') {
+      return false;
+    }
+    if (activeTab === 'others' && (order.status === 'APPR' || order.status === 'INPRG')) {
       return false;
     }
 
@@ -71,12 +73,24 @@ export default function PMListPage() {
   // 翻譯
   const translations = {
     currentReports: {
-      zh: '等待排程',
-      en: 'Waiting to be Scheduled'
+      zh: '當前工單',
+      en: 'Current Reports'
     },
     waitingForApproval: {
-      zh: '已核准待提交',
-      en: 'Approved wait submit'
+      zh: '等待核准',
+      en: 'Waiting for Approval'
+    },
+    approved: {
+      zh: '已核准',
+      en: 'Approved'
+    },
+    inprogress: {
+      zh: '進行中',
+      en: 'In Progress'
+    },
+    others: {
+      zh: '其他',
+      en: 'Others'
     },
     searchPlaceholder: {
       zh: '搜尋工單號碼、設備ID或描述',
@@ -290,23 +304,33 @@ export default function PMListPage() {
           <div className="flex space-x-6 border-b">
             <button
               className={`py-2 px-1 -mb-px font-medium ${
-                activeTab === 'current'
+                activeTab === 'approved'
                   ? 'text-blue-600 border-b-2 border-blue-600'
                   : 'text-gray-500'
               }`}
-              onClick={() => setActiveTab('current')}
+              onClick={() => setActiveTab('approved')}
             >
-              {t('currentReports')}
+              {t('approved')}
             </button>
             <button
               className={`py-2 px-1 -mb-px font-medium ${
-                activeTab === 'waiting'
+                activeTab === 'inprogress'
                   ? 'text-blue-600 border-b-2 border-blue-600'
                   : 'text-gray-500'
               }`}
-              onClick={() => setActiveTab('waiting')}
+              onClick={() => setActiveTab('inprogress')}
             >
-              {t('waitingForApproval')}
+              {t('inprogress')}
+            </button>
+            <button
+              className={`py-2 px-1 -mb-px font-medium ${
+                activeTab === 'others'
+                  ? 'text-blue-600 border-b-2 border-blue-600'
+                  : 'text-gray-500'
+              }`}
+              onClick={() => setActiveTab('others')}
+            >
+              {t('others')}
             </button>
           </div>
         </div>

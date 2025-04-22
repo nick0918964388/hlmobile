@@ -349,15 +349,19 @@ const apiRequest = async <T>(
     
     const response = await fetch(url, options);
     
-    if (!response.ok) {
-      throw new Error(`HTTP error! Status: ${response.status}`);
-    }
-    
+    // 嘗試解析回應內容，無論狀態碼如何
     const data = await response.json();
     
     // 檢查API返回的錯誤
     if (data.Error) {
-      throw new Error(data.Error.message || '未知錯誤');
+      const errorMessage = data.Error.message || '未知錯誤';
+      const reasonCode = data.Error.reasonCode || '';
+      throw new Error(`${reasonCode ? `${reasonCode} - ` : ''}${errorMessage}`);
+    }
+    
+    // 如果沒有特定的錯誤對象但HTTP狀態碼表示錯誤
+    if (!response.ok) {
+      throw new Error(`HTTP error! Status: ${response.status}`);
     }
     
     if (data.error) {
@@ -720,7 +724,7 @@ export const pmApi = {
   },
   
   // 提交PM工單進行核簽
-  submitWorkOrder: async (id: string, comment: string): Promise<PMWorkOrderDetail> => {
+  submitWorkOrder: async (id: string, comment: string, status?: string): Promise<PMWorkOrderDetail> => {
     // 判斷是否使用模擬資料
     if (process.env.NEXT_PUBLIC_USE_MOCK_DATA === 'true') {
       // 保留原有模擬實現...
@@ -728,7 +732,7 @@ export const pmApi = {
     
     // 使用實際API
     const url = buildApiUrl('MOBILEAPP_SUBMIT_PM_WORKORDER', { wonum: id });
-    return apiRequest<PMWorkOrderDetail>(url, 'POST', { params: { comment } });
+    return apiRequest<PMWorkOrderDetail>(url, 'POST', { params: { comment, status } });
   },
 
   // 新增: 獲取PM工單的附件數據
@@ -985,15 +989,15 @@ export const cmApi = {
   },
   
   // 提交CM工單進行核簽
-  submitWorkOrder: async (id: string, comment: string): Promise<CMWorkOrderDetail> => {
+  submitWorkOrder: async (id: string, comment: string, status?: string): Promise<CMWorkOrderDetail> => {
     // 判斷是否使用模擬資料
     if (process.env.NEXT_PUBLIC_USE_MOCK_DATA === 'true') {
       // 保留原有模擬實現...
     }
     
-    // 使用實際API
-    const url = buildApiUrl('MOBILEAPP_SUBMIT_CM_WORKORDER', { wonum: id });
-    return apiRequest<CMWorkOrderDetail>(url, 'POST', { params: { comment } });
+    // 使用實際API - 改用PM工單的submit API
+    const url = buildApiUrl('MOBILEAPP_SUBMIT_PM_WORKORDER', { wonum: id });
+    return apiRequest<CMWorkOrderDetail>(url, 'POST', { params: { comment, status } });
   },
   
   // 保存CM工單數據

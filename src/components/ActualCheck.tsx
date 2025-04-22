@@ -1,5 +1,12 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { CheckItem as ApiCheckItem, uploadPmAttachment, WorkOrderAttachment } from '@/services/api';
+import { 
+  fileToBase64, 
+  getFileExtension, 
+  getAssetSequenceNumber, 
+  extractInfoFromFileName,
+  generateAttachmentFileName
+} from '@/utils/fileUtils';
 
 interface Media {
   id: string;
@@ -299,28 +306,6 @@ const ActualCheck: React.FC<ActualCheckProps> = ({
     }
   };
 
-  // 將檔案轉換為 base64
-  const fileToBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        if (typeof reader.result === 'string') {
-          // 去除 base64 前綴 (例如 "data:image/png;base64,")
-          const base64String = reader.result.split(',')[1];
-          resolve(base64String);
-        } else {
-          reject(new Error('轉換失敗'));
-        }
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-  };
-
-  const getFileExtension = (filename: string): string => {
-    return filename.slice((filename.lastIndexOf('.') - 1 >>> 0) + 2);
-  };
-
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!activeItemId || !e.target.files || e.target.files.length === 0) return;
     
@@ -331,12 +316,13 @@ const ActualCheck: React.FC<ActualCheckProps> = ({
       // 解析 activeItemId (格式: itemId_assetNum)
       const [itemId, assetNum] = activeItemId.split('_');
       
-      // 獲取要用於assetSeq的資產號
-      let assetSequence = assetNum;
-      if (assetNum === 'Default' || !assetNum) {
-        // 如果是默認資產，設置assetSeq為0
-        assetSequence = '0';
-      }
+      // 取得所有資產編號
+      const availableAssets = [...new Set(checkItems.map(item => item.assetNum || 'Default'))].filter(num => 
+        num && num !== 'Default' && num !== 'Unknown'
+      );
+      
+      // 獲取要用於assetSeq的資產號 - 使用工具函數
+      const assetSequence = getAssetSequenceNumber(assetNum, availableAssets);
       
       // 生成流水號
       const counterKey = `${assetSequence}_${itemId}`;
@@ -352,11 +338,11 @@ const ActualCheck: React.FC<ActualCheckProps> = ({
       // 流水號補零至三位數
       const serialNumber = newCounter.toString().padStart(3, '0');
       
-      // 生成檔案名稱 (格式: CI_[assetSeq]_[itemId]_[serial].[ext])
+      // 生成檔案名稱 - 使用工具函數
       const extension = getFileExtension(file.name);
-      const fileName = `CI_${assetSequence}_${itemId}_${serialNumber}.${extension}`;
+      const fileName = generateAttachmentFileName(assetSequence, itemId, serialNumber, extension);
       
-      // 轉換成 base64
+      // 轉換成 base64 - 使用工具函數
       const base64Content = await fileToBase64(file);
       
       // 準備 API 參數
@@ -528,26 +514,21 @@ const ActualCheck: React.FC<ActualCheckProps> = ({
           targetItemId = targetItemId.split('.')[0];
         }
         
-        // 從fileName格式 CI_0_10_001.PNG 嘗試提取項目ID與資產序號
+        // 從檔名解析資訊 - 使用工具函數
         if (attachment.fileName) {
-          const parts = attachment.fileName.split('_');
-          if (parts.length >= 3 && parts[0] === 'CI') {
-            // 處理文件命名
-            const extractedAssetSeq = parts.length >= 4 ? parts[1] : '0';
-            const extractedItemId = parts.length >= 4 ? parts[2] : parts[1];
-            
-            console.log(`從檔名提取: 資產序號=${extractedAssetSeq}, 項目ID=${extractedItemId}`);
-            
-            // 當API返回的checkItemId為空或包含非數字字符時，使用從檔名提取的值
-            if (!targetItemId || !/^\d+$/.test(targetItemId)) {
-              targetItemId = extractedItemId;
-            }
-            
-            // 確保assetSeq有正確的值
-            if ((!assetSeqToUse || assetSeqToUse === '0') && extractedAssetSeq !== '0') {
-              // 使用從檔名提取的資產序號
-              assetSeqToUse = extractedAssetSeq;
-            }
+          const [extractedAssetSeq, extractedItemId] = extractInfoFromFileName(attachment.fileName);
+          
+          console.log(`從檔名提取: 資產序號=${extractedAssetSeq}, 項目ID=${extractedItemId}`);
+          
+          // 當API返回的checkItemId為空或包含非數字字符時，使用從檔名提取的值
+          if (!targetItemId || !/^\d+$/.test(targetItemId)) {
+            targetItemId = extractedItemId;
+          }
+          
+          // 確保assetSeq有正確的值
+          if ((!assetSeqToUse || assetSeqToUse === '0') && extractedAssetSeq !== '0') {
+            // 使用從檔名提取的資產序號
+            assetSeqToUse = extractedAssetSeq;
           }
         }
         

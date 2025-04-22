@@ -375,21 +375,72 @@ export default function PMDetailPage({ params }: { params: { id: string } }) {
       console.error('Error saving work order:', error);
       // 保存失敗時，顯示錯誤訊息，但不重置isDirty狀態
       // 這樣保存按鈕仍然可以點擊，用戶可以重試
-      alert(language === 'zh' ? '保存工單失敗，請重試。' : 'Failed to save work order. Please try again.');
+      alert(language === 'zh' ? `保存工單失敗：${error instanceof Error ? error.message : '未知錯誤'}` : `Failed to save work order: ${error instanceof Error ? error.message : 'Unknown error'}`);
       // 不設置 setIsDirty(false)，保持按鈕可點擊狀態
     }
   };
 
-  const handleComplete = () => {
-    setShowSubmitModal(true);
+  // 建立一個新的函數來處理狀態特定的按鈕文字
+  const getActionButtonText = () => {
+    if (!workOrder) return '';
+    
+    switch (workOrder.status) {
+      case 'WSCH':
+      case 'WAPPR':
+        return language === 'zh' ? '核准' : 'Approve';
+      case 'APPR':
+        return language === 'zh' ? '開始工作' : 'Start work';
+      case 'INPRG':
+        return language === 'zh' ? '提交' : 'Submit';
+      default:
+        return language === 'zh' ? '提交' : 'Submit';
+    }
+  };
+
+  // 修改現有的handleComplete函數來處理不同的工單狀態
+  const handleComplete = async () => {
+    if (!workOrder) return;
+    
+    try {
+      if (workOrder.status === 'WSCH' || workOrder.status === 'WAPPR') {
+        // WSCH 或 WAPPR 狀態：直接呼叫API，不開啟dialog
+        setIsSubmitting(true);
+        const result = await api.pm.submitWorkOrder(params.id, '', workOrder.status);
+        console.log('Work order approved successfully:', result);
+        alert(language === 'zh' ? '工單已成功核准！' : 'Work order has been approved!');
+        router.push('/pm');
+      } else if (workOrder.status === 'APPR') {
+        // APPR 狀態：直接呼叫API，不開啟dialog
+        setIsSubmitting(true);
+        const result = await api.pm.submitWorkOrder(params.id, '', workOrder.status);
+        console.log('Work order started successfully:', result);
+        alert(language === 'zh' ? '已開始工作！' : 'Work started!');
+        router.push('/pm');
+      } else if (workOrder.status === 'INPRG') {
+        // INPRG 狀態：保持原有行為，開啟 dialog
+        setShowSubmitModal(true);
+      } else {
+        // 其他狀態：開啟 dialog
+        setShowSubmitModal(true);
+      }
+    } catch (error) {
+      console.error('Error in complete action:', error);
+      alert(language === 'zh' ? `操作失敗：${error instanceof Error ? error.message : '未知錯誤'}` : `Operation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      if (workOrder.status === 'WSCH' || workOrder.status === 'WAPPR' || workOrder.status === 'APPR') {
+        setIsSubmitting(false);
+      }
+    }
   };
 
   // 處理提交工單請求
   const handleSubmitWorkOrder = async (comment: string) => {
     try {
+      if (!workOrder) return;
+      
       setIsSubmitting(true);
-      // 呼叫 API 提交工單
-      const result = await api.pm.submitWorkOrder(params.id, comment);
+      // 呼叫 API 提交工單，並傳遞工單狀態
+      const result = await api.pm.submitWorkOrder(params.id, comment, workOrder.status);
       
       console.log('Work order submitted successfully:', result);
       
@@ -404,7 +455,7 @@ export default function PMDetailPage({ params }: { params: { id: string } }) {
       router.push('/pm');
     } catch (error) {
       console.error('Error submitting work order:', error);
-      alert(language === 'zh' ? '提交工單失敗，請重試。' : 'Failed to submit work order. Please try again.');
+      alert(language === 'zh' ? `提交工單失敗：${error instanceof Error ? error.message : '未知錯誤'}` : `Failed to submit work order: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setIsSubmitting(false);
     }
@@ -549,8 +600,15 @@ export default function PMDetailPage({ params }: { params: { id: string } }) {
             >
               {t('save')}
             </button>
-            <button onClick={handleComplete} className="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700">
-              {t('submit')}
+            <button 
+              onClick={handleComplete} 
+              disabled={isSubmitting}
+              className={`bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700 ${isSubmitting ? 'opacity-50 cursor-not-allowed' : ''}`}
+            >
+              {isSubmitting 
+                ? (language === 'zh' ? '處理中...' : 'Processing...') 
+                : getActionButtonText()
+              }
             </button>
           </div>
         </div>

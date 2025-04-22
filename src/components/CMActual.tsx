@@ -4,6 +4,12 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { uploadPmAttachment, WorkOrderAttachment } from '@/services/api';
 import { pmApi } from '@/services/api';
+import { 
+  fileToBase64, 
+  getFileExtension, 
+  extractInfoFromFileName,
+  generateAttachmentFileName
+} from '@/utils/fileUtils';
 
 interface Media {
   id: string;
@@ -157,13 +163,10 @@ export default function CMActual({ cmId, onCompleteStatusChange, onFormChange, o
           // 檢查是否明確設置為task10
           if (attachment.checkItemId === 'task10') return true;
           
-          // 嘗試從檔案名解析
+          // 嘗試從檔案名解析 - 使用工具函數
           if (attachment.fileName && attachment.fileName.startsWith('CI_')) {
-            const parts = attachment.fileName.split('_');
-            if (parts.length >= 3) {
-              const itemId = parts[2];
-              return itemId === 'task10';
-            }
+            const [_, extractedItemId] = extractInfoFromFileName(attachment.fileName);
+            return extractedItemId === 'task10';
           }
           
           return false;
@@ -228,26 +231,6 @@ export default function CMActual({ cmId, onCompleteStatusChange, onFormChange, o
     }
   };
 
-  // 轉換檔案為base64格式
-  const fileToBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = () => {
-        const base64String = reader.result as string;
-        // 移除 data:image/jpeg;base64, 前綴
-        const base64Content = base64String.split(',')[1];
-        resolve(base64Content);
-      };
-      reader.onerror = error => reject(error);
-    });
-  };
-
-  // 獲取檔案副檔名
-  const getFileExtension = (filename: string): string => {
-    return filename.split('.').pop()?.toLowerCase() || '';
-  };
-
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
     
@@ -267,14 +250,15 @@ export default function CMActual({ cmId, onCompleteStatusChange, onFormChange, o
       // 準備上傳至服務器
       // 固定使用task10作為checkItemId
       const checkItemId = 'task10';
+      // 使用簡單數字"0"作為資產序號
       const assetSequence = '0';
       const serialNumber = (Date.now() % 1000).toString().padStart(3, '0');
       
-      // 生成檔案名稱 (格式: CI_[assetSeq]_[itemId]_[serial].[ext])
+      // 生成檔案名稱 - 使用工具函數
       const extension = getFileExtension(file.name);
-      const fileName = `CI_${assetSequence}_${checkItemId}_${serialNumber}.${extension}`;
+      const fileName = generateAttachmentFileName(assetSequence, checkItemId, serialNumber, extension);
       
-      // 轉換成 base64
+      // 轉換成 base64 - 使用工具函數
       const base64Content = await fileToBase64(file);
       
       // 準備 API 參數
