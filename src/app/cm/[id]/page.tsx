@@ -1105,8 +1105,11 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
         {activeTab === 'report' && <WorkReport workOrderId={params.id} onCompleteStatusChange={handleResourceCompleteChange} />}
       </div>
 
+      {/* 底部空白區，防止內容被固定的底部標籤頁遮擋 */}
+      <div className="h-16"></div>
+
       {/* 底部固定按鈕 */}
-      <div className="flex-none bg-blue-600 text-white">
+      <div className="flex-none bg-blue-600 text-white fixed bottom-0 left-0 right-0">
         <div className="grid grid-cols-3 divide-x divide-white/30">
           <button 
             className={`py-4 text-center hover:bg-blue-700 ${activeTab === 'info' ? 'bg-blue-800' : ''}`}
