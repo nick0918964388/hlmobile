@@ -1,9 +1,10 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { uploadPmAttachment, WorkOrderAttachment } from '@/services/api';
 import { pmApi } from '@/services/api';
+import api from '@/services/api'; // 引入完整的api服務
 import { 
   fileToBase64, 
   getFileExtension, 
@@ -36,9 +37,11 @@ interface CMActualProps {
     downtimeHours?: number | string;
     downtimeMinutes?: number | string;
   };
+  equipmentName?: string; // 新增：用於LLM提示
+  abnormalType?: string;  // 新增：用於LLM提示
 }
 
-export default function CMActual({ cmId, onCompleteStatusChange, onFormChange, onFormDataChange, initialData }: CMActualProps) {
+export default function CMActual({ cmId, onCompleteStatusChange, onFormChange, onFormDataChange, initialData, equipmentName, abnormalType }: CMActualProps) {
   const router = useRouter();
   const [formData, setFormData] = useState({
     failureDetails: '',
@@ -63,6 +66,13 @@ export default function CMActual({ cmId, onCompleteStatusChange, onFormChange, o
     downtimeMinutes: '0'
   });
   const [originalMedia, setOriginalMedia] = useState<Media[]>([]);
+
+  // --- 新增 Suggestion 相關狀態 ---
+  const [suggestion, setSuggestion] = useState<string | null>(null);
+  const [isSuggesting, setIsSuggesting] = useState(false);
+  const [suggestionError, setSuggestionError] = useState<string | null>(null);
+  const [isTextareaFocused, setIsTextareaFocused] = useState(false); // 追蹤焦點
+  const suggestionTimeoutRef = useRef<NodeJS.Timeout | null>(null); // 用於 debounce
 
   // 檢測表單內容變更
   useEffect(() => {
@@ -312,6 +322,75 @@ export default function CMActual({ cmId, onCompleteStatusChange, onFormChange, o
     // 注意：實際拍攝的圖片/影片會通過 handleFileChange 函數處理上傳
   };
 
+  // --- 新增 Suggestion 生成處理函數 ---
+  const handleGenerateSuggestion = useCallback(async (currentText: string) => {
+    if (!currentText || currentText.length < 10) { // 至少輸入10個字符才觸發
+      setSuggestion(null);
+      return;
+    }
+    setIsSuggesting(true);
+    setSuggestionError(null);
+    setSuggestion(null); // 清除舊建議
+
+    try {
+      // 構建提示詞 (要求補全)
+      const prompt = `請根據以下已有的故障描述，提供接續的建議文字，約20字左右，以英文呈現 (只需要建議的部分，不要重複前面的文字):
+已輸入描述: "${currentText}"
+
+建議的接續文字:`;
+
+      const result = await api.cm.generateFailureDescription(prompt);
+      
+      if (result && result.response) {
+        const generatedSuggestion = result.response.trim();
+        // 簡單過濾，避免建議只是重複輸入的內容
+        if (generatedSuggestion && !currentText.endsWith(generatedSuggestion.substring(0, 10))) { 
+          setSuggestion(generatedSuggestion);
+        }
+      } else {
+        throw new Error('未能從API獲取有效的建議');
+      }
+    } catch (error) {
+      console.error('Error generating suggestion:', error);
+      setSuggestionError(error instanceof Error ? error.message : '生成建議時發生錯誤');
+    } finally {
+      setIsSuggesting(false);
+    }
+  }, [equipmentName, abnormalType]); // 依賴項
+
+  // --- 使用 useEffect 和 Debounce 觸發建議 --- 
+  useEffect(() => {
+    if (suggestionTimeoutRef.current) {
+      clearTimeout(suggestionTimeoutRef.current);
+    }
+
+    if (formData.failureDetails && isTextareaFocused) { // 僅在有焦點且有內容時觸發
+      suggestionTimeoutRef.current = setTimeout(() => {
+        handleGenerateSuggestion(formData.failureDetails);
+      }, 700); // 700ms延遲
+    }
+    
+    // 清理函數
+    return () => {
+      if (suggestionTimeoutRef.current) {
+        clearTimeout(suggestionTimeoutRef.current);
+      }
+    };
+  }, [formData.failureDetails, isTextareaFocused, handleGenerateSuggestion]);
+
+  // --- 接受建議的函數 ---
+  const acceptSuggestion = () => {
+    if (suggestion) {
+      setFormData(prev => ({
+        ...prev,
+        // 在現有文字後添加建議，如果需要空格，可以加上
+        failureDetails: prev.failureDetails + (prev.failureDetails.endsWith(' ') ? '' : ' ') + suggestion 
+      }));
+      setSuggestion(null); // 清除建議
+      setSuggestionError(null);
+    }
+  };
+
   return (
     <div className="max-w-4xl mx-auto p-4">
       <div className="bg-white rounded-lg shadow-md p-6">
@@ -361,18 +440,65 @@ export default function CMActual({ cmId, onCompleteStatusChange, onFormChange, o
         <form>
           <div className="space-y-6">
             {/* Failure Description */}
-            <div>
-              <label className="block text-lg font-medium text-gray-700 mb-2">
-                Failure Description
-              </label>
-              <textarea
-                name="failureDetails"
-                rows={4}
-                value={formData.failureDetails}
-                onChange={handleChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Please describe the equipment failure"
-              ></textarea>
+            <div className="mb-4">
+              <label htmlFor="failureDetails" className="block text-sm font-medium text-gray-700 mb-1">故障描述</label>
+              <div className="relative">
+                <textarea
+                  id="failureDetails"
+                  name="failureDetails"
+                  value={formData.failureDetails}
+                  onChange={handleChange}
+                  onFocus={() => setIsTextareaFocused(true)} // 設置焦點狀態
+                  onBlur={() => setTimeout(() => setIsTextareaFocused(false), 200)} // 稍長延遲失去焦點，以便點擊建議
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                  rows={4}
+                  placeholder="詳細描述故障情況... (輸入時自動產生建議)"
+                />
+                {/* --- 顯示建議、載入中或錯誤信息 (調整樣式) --- */}
+                {(isSuggesting || suggestion || suggestionError) && isTextareaFocused && (
+                  // 移除邊框、背景、內邊距，調整文字顏色和位置
+                  <div className="mt-1 text-sm relative">
+                    {isSuggesting && (
+                      <span className="text-gray-400 italic">正在產生建議...</span>
+                    )}
+                    {suggestionError && (
+                      <span className="text-red-500">錯誤: {suggestionError}</span>
+                    )}
+                    {suggestion && !isSuggesting && !suggestionError && (
+                      <div className="text-gray-500"> {/* 使用淺色文字 */} 
+                        {/* <span>建議:</span> */}
+                        <span 
+                          className="hover:bg-gray-200 px-1 py-1 cursor-pointer rounded inline-block"
+                          onClick={acceptSuggestion} // 點擊文字本身也能接受
+                          title="點擊接受建議"
+                        >
+                           {suggestion}
+                        </span>
+                        {/* 保留接受按鈕作為備用 */}
+                        {/* <button 
+                          type="button" 
+                          onClick={acceptSuggestion}
+                          className="ml-2 px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs hover:bg-blue-200"
+                        >
+                          接受 (Tab)
+                        </button> */}
+                      </div>
+                    )}
+                     {/* 保持關閉按鈕 */}
+                     {(suggestion || suggestionError) && (
+                       <button 
+                          type="button" 
+                          onClick={() => { setSuggestion(null); setSuggestionError(null); }} // 關閉按鈕
+                          className="absolute top-0 right-1 text-gray-400 hover:text-gray-600 p-0.5"
+                          aria-label="關閉建議"
+                          title="關閉建議"
+                        >
+                          <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd"></path></svg>
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Downtime Reporting */}

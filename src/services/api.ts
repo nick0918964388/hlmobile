@@ -1,3 +1,5 @@
+'use client';
+
 // API服務 - 使用環境變數配置
 
 // 定義PM工單資料介面
@@ -1190,7 +1192,41 @@ export const cmApi = {
     // 使用實際API
     const url = buildApiUrl('MOBILEAPP_CANCEL_CM_WORKORDER', { wonum: id });
     return apiRequest<{ success: boolean; message: string }>(url, 'POST', { reason });
-  }
+  },
+
+  /**
+   * 從 Ollama API 產生故障描述建議
+   * @param prompt 提示詞
+   * @returns Ollama API 的回應
+   */
+  async generateFailureDescription(prompt: string): Promise<any> {
+    try {
+      const response = await fetch('http://ollama.webtw.xyz:11434/api/generate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'mistral-small', // 或者你可以讓模型名稱成為參數
+          prompt: prompt,
+          stream: false,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error("Ollama API error response:", errorData);
+        throw new Error(`Ollama API request failed with status ${response.status}: ${errorData.error || 'Unknown error'}`);
+      }
+
+      const data = await response.json();
+      console.log("Ollama API response:", data);
+      return data; // 回傳完整的 API 回應
+    } catch (error) {
+      console.error('Error calling Ollama API:', error);
+      throw error; // 將錯誤向上拋出以便呼叫端處理
+    }
+  },
 };
 
 // 通用API功能
