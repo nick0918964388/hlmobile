@@ -402,6 +402,42 @@ export default function PMDetailPage({ params }: { params: { id: string } }) {
     if (!workOrder) return;
     
     try {
+      // 添加提交前的檢查邏輯
+      const validationErrors = [];
+      
+      // 只在INPRG狀態下檢查必填項，APPR狀態不需檢查
+      if (workOrder.status === 'INPRG') {
+        // 1. 檢查 Info 頁面的必填欄位
+        if (!maintenanceTime.startDate) validationErrors.push(language === 'zh' ? '開始時間未填寫' : 'Start time is required');
+        if (!maintenanceTime.endDate) validationErrors.push(language === 'zh' ? '結束時間未填寫' : 'End time is required');
+        if (!selectedStaff.owner) validationErrors.push(language === 'zh' ? '負責人未選擇' : 'Owner is required');
+        if (!selectedStaff.lead) validationErrors.push(language === 'zh' ? '主導人員未選擇' : 'Lead is required');
+        if (!selectedStaff.supervisor) validationErrors.push(language === 'zh' ? '監督人員未選擇' : 'Supervisor is required');
+        
+        // 2. 檢查 Actual 頁面的項目
+        if (workOrder.checkItems && workOrder.checkItems.length > 0 && !actualCheckComplete) {
+          validationErrors.push(language === 'zh' ? 'Actual頁面的檢查項目尚未全部完成' : 'Check items in Actual tab are not completed');
+        }
+        
+        // 3. 檢查 Resource 頁面至少要有一個 labor 資源
+        const hasLabor = (updatedResources?.labor && updatedResources.labor.length > 0) || 
+                         (workOrder.resources?.labor && workOrder.resources.labor.length > 0);
+        
+        if (!hasLabor) {
+          validationErrors.push(language === 'zh' ? '至少需要輸入一項人員工時' : 'At least one labor resource is required');
+        }
+      }
+      
+      // 顯示驗證錯誤
+      if (validationErrors.length > 0) {
+        alert(language === 'zh' ? 
+          `提交前請完成以下必填項：\n${validationErrors.join('\n')}` : 
+          `Please complete the following required items before submission:\n${validationErrors.join('\n')}`
+        );
+        return;
+      }
+      
+      // 通過驗證後繼續原有的提交邏輯
       if (workOrder.status === 'WSCH' || workOrder.status === 'WAPPR') {
         // WSCH 或 WAPPR 狀態：直接呼叫API，不開啟dialog
         setIsSubmitting(true);
@@ -437,6 +473,43 @@ export default function PMDetailPage({ params }: { params: { id: string } }) {
   const handleSubmitWorkOrder = async (comment: string) => {
     try {
       if (!workOrder) return;
+      
+      // 添加提交前的檢查邏輯
+      const validationErrors = [];
+      
+      // 只在INPRG狀態下檢查必填項，APPR狀態不需檢查
+      if (workOrder.status === 'INPRG') {
+        // 1. 檢查 Info 頁面的必填欄位
+        if (!maintenanceTime.startDate) validationErrors.push(language === 'zh' ? '開始時間未填寫' : 'Start time is required');
+        if (!maintenanceTime.endDate) validationErrors.push(language === 'zh' ? '結束時間未填寫' : 'End time is required');
+        if (!selectedStaff.owner) validationErrors.push(language === 'zh' ? '負責人未選擇' : 'Owner is required');
+        if (!selectedStaff.lead) validationErrors.push(language === 'zh' ? '主導人員未選擇' : 'Lead is required');
+        if (!selectedStaff.supervisor) validationErrors.push(language === 'zh' ? '監督人員未選擇' : 'Supervisor is required');
+        
+        // 2. 檢查 Actual 頁面的項目
+        if (workOrder.checkItems && workOrder.checkItems.length > 0 && !actualCheckComplete) {
+          validationErrors.push(language === 'zh' ? 'Actual頁面的檢查項目尚未全部完成' : 'Check items in Actual tab are not completed');
+        }
+        
+        // 3. 檢查 Resource 頁面至少要有一個 labor 資源
+        const hasLabor = (updatedResources?.labor && updatedResources.labor.length > 0) || 
+                        (workOrder.resources?.labor && workOrder.resources.labor.length > 0);
+        
+        if (!hasLabor) {
+          validationErrors.push(language === 'zh' ? '至少需要輸入一項人員工時' : 'At least one labor resource is required');
+        }
+      }
+      
+      // 顯示驗證錯誤
+      if (validationErrors.length > 0) {
+        setIsSubmitting(false);
+        setShowSubmitModal(false);
+        alert(language === 'zh' ? 
+          `提交前請完成以下必填項：\n${validationErrors.join('\n')}` : 
+          `Please complete the following required items before submission:\n${validationErrors.join('\n')}`
+        );
+        return;
+      }
       
       setIsSubmitting(true);
       // 呼叫 API 提交工單，並傳遞工單狀態

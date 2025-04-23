@@ -273,53 +273,44 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
 
   // 監控數據變更狀態
   useEffect(() => {
-    // 使用 requestAnimationFrame 確保在一個渲染周期後再檢查
-    // 這樣即使其他 useState 更新後觸發了這個 effect，也能確保最新的 save 操作優先
-    const checkChanges = () => {
-      // 檢查人員數據是否變更
-      const isStaffChanged = JSON.stringify(selectedStaff) !== JSON.stringify(originalStaff);
-      
-      // 檢查時間數據是否變更
-      const isTimeChanged = startTime !== originalStartTime || endTime !== originalEndTime;
-      
-      // 檢查可編輯欄位是否變更
-      const isFieldsChanged = JSON.stringify(editableFields) !== JSON.stringify(originalEditableFields);
-      
-      // 如果是保存操作剛剛完成（isDirty 為 false），則不要覆蓋它
-      if (!isDirty && (isStaffChanged || isTimeChanged || isFieldsChanged || actualFormChanged || reportFormChanged)) {
-        // 這可能是由於剛剛進行了數據重置或保存操作
-        // 我們應該延遲執行對 isDirty 的更新，確保保存操作的設置優先
-        return;
-      }
-      
-      // 更新整體數據變更狀態 (實際組件的變更狀態由handleActualFormChange控制)
-      if (activeTab === 'info') {
-        setIsDirty(isStaffChanged || isTimeChanged || isFieldsChanged);
-      } else if (activeTab === 'actual') {
-        setIsDirty(actualFormChanged);
-      } else if (activeTab === 'report') {
-        setIsDirty(reportFormChanged);
-      }
-    };
-    
-    // 使用下一次渲染幀來執行檢查
-    const frameId = requestAnimationFrame(checkChanges);
-    
-    // 清理函數
-    return () => cancelAnimationFrame(frameId);
+    // 簡化檢查邏輯，直接比較核心數據
+    const isStaffChanged = JSON.stringify(selectedStaff) !== JSON.stringify(originalStaff);
+    const isTimeChanged = startTime !== originalStartTime || endTime !== originalEndTime;
+    const isFieldsChanged = JSON.stringify(editableFields) !== JSON.stringify(originalEditableFields);
+
+    // 根據當前標籤頁和對應的表單變更狀態來決定 isDirty
+    let newIsDirty = false;
+    if (activeTab === 'info') {
+      newIsDirty = isStaffChanged || isTimeChanged || isFieldsChanged;
+    } else if (activeTab === 'actual') {
+      newIsDirty = actualFormChanged;
+    } else if (activeTab === 'report') {
+      newIsDirty = reportFormChanged;
+    }
+
+    // 只有在計算出的新狀態與當前狀態不同時才更新
+    // 避免在保存後立即因 originalStaff 等更新而觸發不必要的 isDirty 狀態變化
+    if (newIsDirty !== isDirty) {
+       // 使用 requestAnimationFrame 可能有助於避免某些渲染時序問題
+       const frameId = requestAnimationFrame(() => {
+         setIsDirty(newIsDirty);
+       });
+       return () => cancelAnimationFrame(frameId);
+    }
+
   }, [
-    selectedStaff, 
-    startTime, 
-    endTime, 
-    editableFields, 
-    originalStaff, 
-    originalStartTime, 
-    originalEndTime, 
-    originalEditableFields, 
-    activeTab, 
+    selectedStaff,
+    startTime,
+    endTime,
+    editableFields,
+    originalStaff,
+    originalStartTime,
+    originalEndTime,
+    originalEditableFields,
+    activeTab,
     actualFormChanged,
     reportFormChanged,
-    isDirty // 加入 isDirty 作為依賴，這樣可以檢測它的變化
+    isDirty // 仍然保留 isDirty，以便在 newIsDirty !== isDirty 條件下觸發更新
   ]);
 
   const handleActualFormChange = (isDirty: boolean) => {
@@ -632,6 +623,42 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
     if (!workOrder) return;
     
     try {
+      // 添加提交前的檢查邏輯
+      const validationErrors = [];
+      
+      // 只在INPRG狀態下檢查必填項，APPR狀態不需檢查
+      if (workOrder.status === 'INPRG') {
+        // 1. 檢查 Info 頁面的必填欄位
+        if (!startTime) validationErrors.push(language === 'zh' ? '開始時間未填寫' : 'Start time is required');
+        if (!endTime) validationErrors.push(language === 'zh' ? '結束時間未填寫' : 'End time is required');
+        if (!selectedStaff.owner) validationErrors.push(language === 'zh' ? '負責人未選擇' : 'Owner is required');
+        if (!selectedStaff.lead) validationErrors.push(language === 'zh' ? '主導人員未選擇' : 'Lead is required');
+        if (!selectedStaff.supervisor) validationErrors.push(language === 'zh' ? '監督人員未選擇' : 'Supervisor is required');
+        
+        // 2. 檢查 Actual 頁面的項目
+        if (workOrder.checkItems && workOrder.checkItems.length > 0 && !actualCheckComplete) {
+          validationErrors.push(language === 'zh' ? 'Actual頁面的檢查項目尚未全部完成' : 'Check items in Actual tab are not completed');
+        }
+        
+        // 3. 檢查 Resource 頁面至少要有一個 labor 資源
+        const hasLabor = (resourcesData?.labor && resourcesData.labor.length > 0) || 
+                        (workOrder.resources?.labor && workOrder.resources.labor.length > 0);
+        
+        if (!hasLabor) {
+          validationErrors.push(language === 'zh' ? '至少需要輸入一項人員工時' : 'At least one labor resource is required');
+        }
+      }
+      
+      // 顯示驗證錯誤
+      if (validationErrors.length > 0) {
+        alert(language === 'zh' ? 
+          `提交前請完成以下必填項：\n${validationErrors.join('\n')}` : 
+          `Please complete the following required items before submission:\n${validationErrors.join('\n')}`
+        );
+        return;
+      }
+      
+      // 通過驗證後繼續原有的提交邏輯
       if (workOrder.status === 'WSCH' || workOrder.status === 'WAPPR') {
         // WSCH 或 WAPPR 狀態：直接呼叫API，不開啟dialog
         setIsSubmitting(true);
@@ -812,6 +839,43 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
   const handleSubmitWorkOrder = async (comment: string) => {
     try {
       if (!workOrder) return;
+      
+      // 添加提交前的檢查邏輯
+      const validationErrors = [];
+      
+      // 只在INPRG狀態下檢查必填項，APPR狀態不需檢查
+      if (workOrder.status === 'INPRG') {
+        // 1. 檢查 Info 頁面的必填欄位
+        if (!startTime) validationErrors.push(language === 'zh' ? '開始時間未填寫' : 'Start time is required');
+        if (!endTime) validationErrors.push(language === 'zh' ? '結束時間未填寫' : 'End time is required');
+        if (!selectedStaff.owner) validationErrors.push(language === 'zh' ? '負責人未選擇' : 'Owner is required');
+        if (!selectedStaff.lead) validationErrors.push(language === 'zh' ? '主導人員未選擇' : 'Lead is required');
+        if (!selectedStaff.supervisor) validationErrors.push(language === 'zh' ? '監督人員未選擇' : 'Supervisor is required');
+        
+        // 2. 檢查 Actual 頁面的項目
+        if (workOrder.checkItems && workOrder.checkItems.length > 0 && !actualCheckComplete) {
+          validationErrors.push(language === 'zh' ? 'Actual頁面的檢查項目尚未全部完成' : 'Check items in Actual tab are not completed');
+        }
+        
+        // 3. 檢查 Resource 頁面至少要有一個 labor 資源
+        const hasLabor = (resourcesData?.labor && resourcesData.labor.length > 0) || 
+                        (workOrder.resources?.labor && workOrder.resources.labor.length > 0);
+        
+        if (!hasLabor) {
+          validationErrors.push(language === 'zh' ? '至少需要輸入一項人員工時' : 'At least one labor resource is required');
+        }
+      }
+      
+      // 顯示驗證錯誤
+      if (validationErrors.length > 0) {
+        setIsSubmitting(false);
+        setShowSubmitModal(false);
+        alert(language === 'zh' ? 
+          `提交前請完成以下必填項：\n${validationErrors.join('\n')}` : 
+          `Please complete the following required items before submission:\n${validationErrors.join('\n')}`
+        );
+        return;
+      }
       
       setIsSubmitting(true);
       // 呼叫 API 提交工單，並傳遞工單狀態

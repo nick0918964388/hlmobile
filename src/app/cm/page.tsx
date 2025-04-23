@@ -8,15 +8,17 @@ import CMActual from '@/components/CMActual';
 import api, { CMWorkOrder, EquipmentOption, AbnormalMaintenanceOptions, Manager } from '@/services/api';
 import { getManagerList } from '@/services/api';
 import { SkeletonList } from '@/components/Skeleton';
+import { useUser } from '@/contexts/UserContext';
 
 export default function CMPage() {
   const [showSidebar, setShowSidebar] = useState(false);
-  const [activeTab, setActiveTab] = useState<'approved' | 'inprogress' | 'others'>('approved');
+  const [activeTab, setActiveTab] = useState<'approved' | 'inprogress' | 'assignToMe' | 'others'>('approved');
   const mainContentRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
   const { language } = useLanguage();
   const [showReportForm, setShowReportForm] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const { user } = useUser();
   
   // 使用API服務獲取的數據
   const [cmRecords, setCmRecords] = useState<CMWorkOrder[]>([]);
@@ -167,7 +169,12 @@ export default function CMPage() {
     if (activeTab === 'inprogress' && record.status !== 'INPRG') {
       return false;
     }
-    if (activeTab === 'others' && (record.status === 'APPR' || record.status === 'INPRG')) {
+    // 指派給我的標籤，篩選狀態為"WFA"的工單
+    if (activeTab === 'assignToMe') {
+      // 僅檢查狀態是否為WFA
+      return record.status === 'WFA';
+    }
+    if (activeTab === 'others' && (record.status === 'APPR' || record.status === 'INPRG' || record.status === 'WFA')) {
       return false;
     }
 
@@ -338,12 +345,16 @@ export default function CMPage() {
       en: 'Required'
     },
     approved: {
-      zh: '已核准',
-      en: 'Approved'
+      zh: '當前工作',
+      en: 'Current Work'
     },
     inprogress: {
       zh: '進行中',
       en: 'In Progress'
+    },
+    assignToMe: {
+      zh: '等待核准',
+      en: 'Wait for Approval'
     },
     others: {
       zh: '其他',
@@ -467,7 +478,7 @@ export default function CMPage() {
     try {
       // 使用API服務創建新工單
       const result = await api.cm.createWorkOrder(formData);
-      alert(`工單已建立: ${result.id}`);
+      alert(`Creating CM work order: ${result.id}`);
       
       // 重新獲取工單列表
       const updatedRecords = await api.cm.getWorkOrders();
@@ -478,7 +489,7 @@ export default function CMPage() {
       setShowReportForm(false);
     } catch (error) {
       console.error('Error creating CM work order:', error);
-      alert('建立工單失敗');
+      alert('Error creating CM work order');
     }
   };
 
@@ -766,6 +777,16 @@ export default function CMPage() {
               onClick={() => setActiveTab('inprogress')}
             >
               {t('inprogress')}
+            </button>
+            <button
+              className={`py-2 px-1 -mb-px font-medium ${
+                activeTab === 'assignToMe'
+                  ? 'text-blue-600 border-b-2 border-blue-600'
+                  : 'text-gray-500'
+              }`}
+              onClick={() => setActiveTab('assignToMe')}
+            >
+              {t('assignToMe')}
             </button>
             <button
               className={`py-2 px-1 -mb-px font-medium ${

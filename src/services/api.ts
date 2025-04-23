@@ -13,6 +13,7 @@ export interface PMWorkOrder {
   frequency: string;
   creator: string;
   systemEngineer: string;
+  owner?: string;  // 添加owner屬性
 }
 
 // 定義PM工單詳情介面
@@ -60,7 +61,7 @@ export interface CMWorkOrder {
   maintenanceType: string;
   creator: string;
   systemEngineer: string;
-  owner?: string;  // 新增負責人字段
+  owner?: string;  // 增加owner字段
 }
 
 // 定義CM工單詳情介面

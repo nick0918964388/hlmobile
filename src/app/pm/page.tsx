@@ -7,14 +7,16 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import ActualCheck from '@/components/ActualCheck';
 import WorkReport from '@/components/WorkReport';
 import api, { PMWorkOrder } from '@/services/api';
+import { useUser } from '@/contexts/UserContext';
 
 export default function PMListPage() {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<'approved' | 'inprogress' | 'others'>('approved');
+  const [activeTab, setActiveTab] = useState<'approved' | 'inprogress' | 'assignToMe' | 'others'>('approved');
   const [showSidebar, setShowSidebar] = useState(false);
   const mainContentRef = useRef<HTMLDivElement>(null);
   const { language } = useLanguage();
   const [searchQuery, setSearchQuery] = useState('');
+  const { user } = useUser();
   
   // 工單列表狀態
   const [workOrders, setWorkOrders] = useState<PMWorkOrder[]>([]);
@@ -48,7 +50,12 @@ export default function PMListPage() {
     if (activeTab === 'inprogress' && order.status !== 'INPRG') {
       return false;
     }
-    if (activeTab === 'others' && (order.status === 'APPR' || order.status === 'INPRG')) {
+    // 指派給我的標籤，篩選狀態為"WFA"的工單
+    if (activeTab === 'assignToMe') {
+      // 僅檢查狀態是否為WFA
+      return order.status === 'WFA';
+    }
+    if (activeTab === 'others' && (order.status === 'APPR' || order.status === 'INPRG' || order.status === 'WFA')) {
       return false;
     }
 
@@ -81,12 +88,16 @@ export default function PMListPage() {
       en: 'Waiting for Approval'
     },
     approved: {
-      zh: '已核准',
-      en: 'Approved'
+      zh: '當前工作',
+      en: 'Current Work'
     },
     inprogress: {
       zh: '進行中',
       en: 'In Progress'
+    },
+    assignToMe: {
+      zh: '等待核准',
+      en: 'Wait for Approval'
     },
     others: {
       zh: '其他',
@@ -321,6 +332,16 @@ export default function PMListPage() {
               onClick={() => setActiveTab('inprogress')}
             >
               {t('inprogress')}
+            </button>
+            <button
+              className={`py-2 px-1 -mb-px font-medium ${
+                activeTab === 'assignToMe'
+                  ? 'text-blue-600 border-b-2 border-blue-600'
+                  : 'text-gray-500'
+              }`}
+              onClick={() => setActiveTab('assignToMe')}
+            >
+              {t('assignToMe')}
             </button>
             <button
               className={`py-2 px-1 -mb-px font-medium ${
