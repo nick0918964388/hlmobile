@@ -333,21 +333,50 @@ export default function CMActual({ cmId, onCompleteStatusChange, onFormChange, o
     setSuggestion(null); // 清除舊建議
 
     try {
-      // 構建提示詞 (要求補全)
-      const prompt = `請根據以下已有的故障描述，提供接續的建議文字，約20字左右，以英文呈現 (只需要建議的部分，不要重複前面的文字):
-已輸入描述: "${currentText}"
+      // Modify prompt for English output
+      const prompt = `Based on the following existing failure description, provide a concise continuation suggestion in English (around 20 words, only the suggested part, do not repeat the previous text):
+Existing description: "${currentText}"
 
-建議的接續文字:`;
+Suggested continuation:`;
 
-      const result = await api.cm.generateFailureDescription(prompt);
-      
-      if (result && result.response) {
-        const generatedSuggestion = result.response.trim();
+      // --- 改為呼叫新的 API Route ---
+      const response = await fetch('/api/cm/generate-suggestion', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ prompt }), // 將 prompt 包在 JSON 物件中傳送
+      });
+
+      // 檢查回應狀態
+      if (!response.ok) {
+        let errorData;
+        try {
+          // 嘗試從回應 body 中解析錯誤訊息
+          errorData = await response.json();
+        } catch (parseError) {
+          // 如果解析失敗，使用狀態文字
+          throw new Error(response.statusText || `API request failed with status ${response.status}`);
+        }
+        // 拋出從 API Route 收到的錯誤訊息
+        throw new Error(errorData?.error || `API request failed with status ${response.status}`);
+      }
+
+      // 解析成功的回應
+      const result = await response.json();
+
+      if (result && result.suggestion) {
+        const generatedSuggestion = result.suggestion;
         // 簡單過濾，避免建議只是重複輸入的內容
-        if (generatedSuggestion && !currentText.endsWith(generatedSuggestion.substring(0, 10))) { 
+        if (generatedSuggestion && !currentText.endsWith(generatedSuggestion.substring(0, 10))) {
           setSuggestion(generatedSuggestion);
+        } else {
+          // 如果建議與輸入太相似或為空，則不顯示
+          console.log("Suggestion was empty or too similar to the input.");
+          setSuggestion(null); 
         }
       } else {
+        // 理論上 API Route 會處理空回應，但保留此處以防萬一
         throw new Error('未能從API獲取有效的建議');
       }
     } catch (error) {
@@ -356,7 +385,7 @@ export default function CMActual({ cmId, onCompleteStatusChange, onFormChange, o
     } finally {
       setIsSuggesting(false);
     }
-  }, [equipmentName, abnormalType]); // 依賴項
+  }, [equipmentName, abnormalType]); // 依賴項保持不變，因為 prompt 的建構仍需要它們
 
   // --- 使用 useEffect 和 Debounce 觸發建議 --- 
   useEffect(() => {
@@ -383,7 +412,7 @@ export default function CMActual({ cmId, onCompleteStatusChange, onFormChange, o
     if (suggestion) {
       setFormData(prev => ({
         ...prev,
-        // 在現有文字後添加建議，如果需要空格，可以加上
+        // Append suggestion (add space if needed)
         failureDetails: prev.failureDetails + (prev.failureDetails.endsWith(' ') ? '' : ' ') + suggestion 
       }));
       setSuggestion(null); // 清除建議
@@ -441,7 +470,7 @@ export default function CMActual({ cmId, onCompleteStatusChange, onFormChange, o
           <div className="space-y-6">
             {/* Failure Description */}
             <div className="mb-4">
-              <label htmlFor="failureDetails" className="block text-sm font-medium text-gray-700 mb-1">故障描述</label>
+              <label htmlFor="failureDetails" className="block text-sm font-medium text-gray-700 mb-1">Failure Description</label>
               <div className="relative">
                 <textarea
                   id="failureDetails"
@@ -452,48 +481,37 @@ export default function CMActual({ cmId, onCompleteStatusChange, onFormChange, o
                   onBlur={() => setTimeout(() => setIsTextareaFocused(false), 200)} // 稍長延遲失去焦點，以便點擊建議
                   className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
                   rows={4}
-                  placeholder="詳細描述故障情況... (輸入時自動產生建議)"
+                  placeholder="Describe the failure... (Suggestions appear automatically as you type)"
                 />
-                {/* --- 顯示建議、載入中或錯誤信息 (調整樣式) --- */}
+                {/* --- Display suggestion, loading, or error message (adjusted styles) --- */}
                 {(isSuggesting || suggestion || suggestionError) && isTextareaFocused && (
-                  // 移除邊框、背景、內邊距，調整文字顏色和位置
                   <div className="mt-1 text-sm relative">
                     {isSuggesting && (
-                      <span className="text-gray-400 italic">正在產生建議...</span>
+                      <span className="text-gray-400 italic">Generating suggestion...</span>
                     )}
                     {suggestionError && (
-                      <span className="text-red-500">錯誤: {suggestionError}</span>
+                      <span className="text-red-500">Error: {suggestionError}</span>
                     )}
                     {suggestion && !isSuggesting && !suggestionError && (
-                      <div className="text-gray-500"> {/* 使用淺色文字 */} 
-                        {/* <span>建議:</span> */}
+                      <div className="text-gray-500">
                         <span 
                           className="hover:bg-gray-200 px-1 py-1 cursor-pointer rounded inline-block"
-                          onClick={acceptSuggestion} // 點擊文字本身也能接受
-                          title="點擊接受建議"
+                          onClick={acceptSuggestion}
+                          title="Click to accept suggestion"
                         >
                            {suggestion}
                         </span>
-                        {/* 保留接受按鈕作為備用 */}
-                        {/* <button 
-                          type="button" 
-                          onClick={acceptSuggestion}
-                          className="ml-2 px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs hover:bg-blue-200"
-                        >
-                          接受 (Tab)
-                        </button> */}
                       </div>
                     )}
-                     {/* 保持關閉按鈕 */}
-                     {(suggestion || suggestionError) && (
-                       <button 
-                          type="button" 
-                          onClick={() => { setSuggestion(null); setSuggestionError(null); }} // 關閉按鈕
-                          className="absolute top-0 right-1 text-gray-400 hover:text-gray-600 p-0.5"
-                          aria-label="關閉建議"
-                          title="關閉建議"
-                        >
-                          <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd"></path></svg>
+                    {(suggestion || suggestionError) && (
+                      <button 
+                        type="button" 
+                        onClick={() => { setSuggestion(null); setSuggestionError(null); }}
+                        className="absolute top-0 right-1 text-gray-400 hover:text-gray-600 p-0.5"
+                        aria-label="Close suggestion"
+                        title="Close suggestion"
+                      >
+                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd"></path></svg>
                       </button>
                     )}
                   </div>
