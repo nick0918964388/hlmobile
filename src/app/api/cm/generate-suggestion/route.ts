@@ -58,8 +58,14 @@ export async function POST(request: Request) {
     console.log('API Route received result from Ollama:', result); // 在伺服器端記錄服務的回應
 
     if (result && result.response) {
-      // 將成功的回應傳回前端
-      return NextResponse.json({ suggestion: result.response.trim() });
+      // 處理回應：去除頭尾空白，並移除頭尾的雙引號
+      let suggestionText = result.response.trim();
+      if (suggestionText.startsWith('"') && suggestionText.endsWith('"')) {
+        suggestionText = suggestionText.substring(1, suggestionText.length - 1);
+      }
+      
+      // 將處理過的建議傳回前端
+      return NextResponse.json({ suggestion: suggestionText });
     } else {
       // 如果 API 呼叫成功但回應結構不符合預期
       console.error('Ollama API call succeeded but returned unexpected structure:', result);

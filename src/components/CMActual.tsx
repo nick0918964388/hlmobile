@@ -162,13 +162,10 @@ export default function CMActual({ cmId, onCompleteStatusChange, onFormChange, o
   const fetchAttachments = async () => {
     try {
       console.log(`正在獲取工單 ${cmId} 的附件...`);
-      // 直接使用pmApi.getWorkOrderAttachments
-      const attachments = await pmApi.getWorkOrderAttachments(cmId);
+      const attachments = await pmApi.getWorkOrderAttachments(cmId); // 假設這個還是從 api.ts 來的
       console.log(`成功獲取 ${attachments.length} 個附件`);
-      
-      // 將附件轉換為媒體格式並更新狀態
+
       if (attachments && attachments.length > 0) {
-        // 過濾出關聯到task10的附件，或檢查文件名模式是否包含task10
         const relevantAttachments = attachments.filter(attachment => {
           // 檢查是否明確設置為task10
           if (attachment.checkItemId === 'task10') return true;
@@ -181,26 +178,41 @@ export default function CMActual({ cmId, onCompleteStatusChange, onFormChange, o
           
           return false;
         });
-        
+
         console.log(`過濾出 ${relevantAttachments.length} 個與task10相關的附件`);
-        
-        const mediaFromAttachments = relevantAttachments.map((attachment: WorkOrderAttachment) => {
-          // 判斷附件類型是圖片還是影片
-          const isImage = /\.(jpg|jpeg|png|gif|bmp|webp)$/i.test(attachment.fileName);
-          const isVideo = /\.(mp4|webm|ogg|mov|avi)$/i.test(attachment.fileName);
-          
-          // 如果不是圖片或影片則跳過
-          if (!isImage && !isVideo) return null;
-          
-          return {
-            id: attachment.id.toString(),
-            type: isImage ? 'image' as const : 'video' as const,
-            url: attachment.url
-          };
-        }).filter(item => item !== null) as Media[];
-        
+
+        const mediaFromAttachments = relevantAttachments
+          .map((attachment: WorkOrderAttachment) => {
+            const isImage = /\.(jpg|jpeg|png|gif|bmp|webp)$/i.test(attachment.fileName);
+            const isVideo = /\.(mp4|webm|ogg|mov|avi)$/i.test(attachment.fileName);
+
+            if (!isImage && !isVideo) return null;
+
+            // --- 修改這裡：使用代理 URL ---
+            // 檢查 URL 是否是需要代理的外部 URL (非 blob: 或 data:)
+            let displayUrl = attachment.url;
+            if (displayUrl && !displayUrl.startsWith('blob:') && !displayUrl.startsWith('data:')) {
+               try {
+                 // 確保 URL 是合法的，避免代理無效的 URL
+                 new URL(displayUrl); 
+                 displayUrl = `/api/image-proxy?url=${encodeURIComponent(displayUrl)}`;
+               } catch (e) {
+                 console.warn(`Invalid attachment URL skipped: ${attachment.url}`);
+                 return null; // 忽略無效 URL 的附件
+               }
+            }
+            // --------------------------
+
+            return {
+              id: attachment.id.toString(),
+              type: isImage ? 'image' as const : 'video' as const,
+              url: displayUrl // 使用處理過的 URL
+            };
+          })
+          .filter(item => item !== null) as Media[];
+
         setMedia(mediaFromAttachments);
-        setOriginalMedia(mediaFromAttachments);
+        setOriginalMedia(mediaFromAttachments); // 同步更新原始數據
       }
     } catch (error) {
       console.error('獲取附件失敗:', error);
@@ -246,16 +258,18 @@ export default function CMActual({ cmId, onCompleteStatusChange, onFormChange, o
     
     try {
       const file = e.target.files[0];
-      const url = URL.createObjectURL(file);
+      // --- 本地預覽 URL 不需要代理 ---
+      const localPreviewUrl = URL.createObjectURL(file); 
+      // -------------------------------
       
       // 在UI上顯示媒體
       const newMedia: Media = {
-        id: `media_${Date.now()}`,
+        id: `local_${Date.now()}`, // 給本地文件一個不同的 ID 前綴
         type: mediaType,
-        url
+        url: localPreviewUrl // 使用本地預覽 URL
       };
       
-      setMedia([...media, newMedia]);
+      setMedia(prevMedia => [...prevMedia, newMedia]);
       
       // 準備上傳至服務器
       // 固定使用task10作為checkItemId
@@ -288,15 +302,18 @@ export default function CMActual({ cmId, onCompleteStatusChange, onFormChange, o
       console.log('附件上傳結果:', result);
       
     } catch (error) {
-      console.error('上傳附件失敗:', error);
+      console.error('處理或上傳附件失敗:', error);
+      // 可能需要從 media 狀態中移除失敗的預覽
     }
     
     // Clear input value to allow selecting the same file again
     e.target.value = '';
   };
 
+  // --- 確保 removeMedia 能正確處理本地和遠端的媒體 ID ---
   const removeMedia = (mediaId: string) => {
     // 從本地狀態中刪除媒體
+    const mediaToRemove = media.find(m => m.id === mediaId);
     setMedia(media.filter(m => m.id !== mediaId));
     
     // 如果存在擴展媒體並且ID匹配，關閉預覽
@@ -304,9 +321,20 @@ export default function CMActual({ cmId, onCompleteStatusChange, onFormChange, o
       setExpandedMedia(null);
     }
     
-    // 注意：目前API可能沒有提供刪除已上傳附件的功能
-    // 如果後續需要實現，可以在此添加刪除附件的API調用
-    console.log(`媒體項目 ${mediaId} 已從本地移除，但可能仍存在於服務器上`);
+    // 如果媒體 ID 不是本地預覽 (不是以 "local_" 開頭)
+    // 則可能需要調用 API 來刪除伺服器上的附件 (如果有的話)
+    if (!mediaId.startsWith('local_')) {
+       console.log(`伺服器附件 ${mediaId} 的刪除邏輯需要實現 (如果 API 支持)`);
+       // const attachmentId = parseInt(mediaId); // 假設 ID 是數字
+       // if (!isNaN(attachmentId)) {
+       //   // 調用刪除 API: await deleteAttachmentApi(attachmentId);
+       // }
+    } else {
+       // 如果是本地預覽，釋放 object URL
+       if (mediaToRemove?.url.startsWith('blob:')) {
+         URL.revokeObjectURL(mediaToRemove.url);
+       }
+    }
   };
 
   const openCamera = (type: 'image' | 'video') => {
