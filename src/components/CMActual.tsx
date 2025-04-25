@@ -66,6 +66,7 @@ export default function CMActual({ cmId, onCompleteStatusChange, onFormChange, o
     downtimeMinutes: '0'
   });
   const [originalMedia, setOriginalMedia] = useState<Media[]>([]);
+  const [isDeleting, setIsDeleting] = useState<string | null>(null); // 新增狀態追蹤哪個附件正在刪除
 
   // --- 新增 Suggestion 相關狀態 ---
   const [suggestion, setSuggestion] = useState<string | null>(null);
@@ -311,29 +312,68 @@ export default function CMActual({ cmId, onCompleteStatusChange, onFormChange, o
   };
 
   // --- 確保 removeMedia 能正確處理本地和遠端的媒體 ID ---
-  const removeMedia = (mediaId: string) => {
-    // 從本地狀態中刪除媒體
+  const removeMedia = async (mediaId: string) => { // 將函數改為 async
+    // 找到要刪除的媒體項目
     const mediaToRemove = media.find(m => m.id === mediaId);
-    setMedia(media.filter(m => m.id !== mediaId));
-    
-    // 如果存在擴展媒體並且ID匹配，關閉預覽
-    if (expandedMedia?.id === mediaId) {
-      setExpandedMedia(null);
-    }
-    
-    // 如果媒體 ID 不是本地預覽 (不是以 "local_" 開頭)
-    // 則可能需要調用 API 來刪除伺服器上的附件 (如果有的話)
+    if (!mediaToRemove) return; // 如果找不到，直接返回
+
+    // 判斷是本地預覽還是伺服器附件
     if (!mediaId.startsWith('local_')) {
-       console.log(`伺服器附件 ${mediaId} 的刪除邏輯需要實現 (如果 API 支持)`);
-       // const attachmentId = parseInt(mediaId); // 假設 ID 是數字
-       // if (!isNaN(attachmentId)) {
-       //   // 調用刪除 API: await deleteAttachmentApi(attachmentId);
-       // }
+      // --- 這是從伺服器獲取的附件 ---
+      const attachmentId = parseInt(mediaId);
+      if (isNaN(attachmentId)) {
+        console.error('無效的附件 ID:', mediaId);
+        // 可以顯示錯誤提示給使用者
+        alert('無效的附件 ID'); // 簡單提示
+        return;
+      }
+
+      // 開始刪除，設置刪除狀態
+      setIsDeleting(mediaId);
+
+      try {
+        console.log(`嘗試刪除伺服器附件 ID: ${attachmentId}`);
+        // **實際刪除 API 呼叫**
+        // 假設我們使用 cmApi 中的函數 (根據您的結構選擇 pmApi 或 cmApi)
+        const result = await api.cm.deleteWorkOrderAttachment(attachmentId);
+
+        if (result.success) {
+          console.log(`附件 ${attachmentId} 已成功從伺服器刪除`);
+          // 伺服器刪除成功後，才從前端狀態移除
+          setMedia(prevMedia => prevMedia.filter(m => m.id !== mediaId));
+          // 如果正在預覽被刪除的媒體，關閉預覽
+          if (expandedMedia?.id === mediaId) {
+            setExpandedMedia(null);
+          }
+          // 同步更新原始數據 (如果需要追蹤原始附件狀態)
+          setOriginalMedia(prevOriginal => prevOriginal.filter(m => m.id !== mediaId));
+        } else {
+          console.error(`從伺服器刪除附件 ${attachmentId} 失敗:`, result.message);
+          // 在此處可以顯示錯誤提示給使用者，例如使用 Toast 通知
+          alert(`刪除附件失敗: ${result.message}`); // 簡單的 alert 示例
+        }
+      } catch (error) {
+        console.error(`呼叫刪除附件 API 時發生錯誤:`, error);
+        // 在此處可以顯示錯誤提示給使用者
+        alert(`刪除附件時發生網路或伺服器錯誤`); // 簡單的 alert 示例
+      } finally {
+        // 無論成功或失敗，結束刪除狀態
+        setIsDeleting(null);
+      }
+
     } else {
-       // 如果是本地預覽，釋放 object URL
-       if (mediaToRemove?.url.startsWith('blob:')) {
-         URL.revokeObjectURL(mediaToRemove.url);
-       }
+      // --- 這是本地上傳/拍照的預覽 ---
+      // 立即從前端狀態移除
+      setMedia(prevMedia => prevMedia.filter(m => m.id !== mediaId));
+      // 如果正在預覽被刪除的媒體，關閉預覽
+      if (expandedMedia?.id === mediaId) {
+        setExpandedMedia(null);
+      }
+      // 釋放之前創建的 Object URL 以節省內存
+      if (mediaToRemove.url.startsWith('blob:')) {
+        URL.revokeObjectURL(mediaToRemove.url);
+      }
+      // 注意：本地預覽不需要更新 originalMedia，因為它從未存在於原始數據中
     }
   };
 
@@ -708,7 +748,7 @@ Suggested continuation:`;
                     <div key={item.id} className="relative group">
                       <div
                         className="h-20 rounded-md overflow-hidden bg-gray-100 cursor-pointer"
-                        onClick={() => setExpandedMedia(item)}
+                        onClick={() => !isDeleting && setExpandedMedia(item)} // 只有在非刪除狀態下才可預覽
                       >
                         {item.type === 'image' ? (
                           <img
@@ -726,10 +766,19 @@ Suggested continuation:`;
                         )}
                       </div>
                       <button
-                        onClick={() => removeMedia(item.id)}
-                        className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+                        onClick={() => !isDeleting && removeMedia(item.id)} // 只有在非刪除狀態下才觸發
+                        className={`absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity ${isDeleting === item.id ? 'cursor-not-allowed opacity-50 group-hover:opacity-50' : ''}`} // 根據狀態改變樣式, 確保 hover 時也顯示禁用狀態
+                        disabled={isDeleting === item.id} // 禁用按鈕
                       >
-                        ✕
+                        {isDeleting === item.id ? (
+                          // 顯示一個簡單的載入指示器
+                          <svg className="animate-spin h-3 w-3 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                        ) : (
+                          '✕' // 正常顯示 '✕'
+                        )}
                       </button>
                     </div>
                   ))}

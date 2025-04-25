@@ -788,6 +788,35 @@ export const pmApi = {
       console.error('獲取附件失敗:', error);
       return [];
     }
+  },
+
+  // 新增：刪除工單附件
+  deleteWorkOrderAttachment: async (attachmentId: number): Promise<{ success: boolean; message: string }> => {
+    // 判斷是否使用模擬資料
+    if (process.env.NEXT_PUBLIC_USE_MOCK_DATA === 'true') {
+      await simulateApiDelay(500);
+      console.log(`模擬刪除附件 ID: ${attachmentId}`);
+      // 模擬成功回應
+      return { success: true, message: '附件已成功刪除（模擬）' };
+    }
+
+    // 使用實際 API
+    // 假設使用 POST 方法並將 ID 作為參數傳遞
+    const url = buildApiUrl('MOBILEAPP_DELETE_ATTACHMENT'); 
+    try {
+      // 注意：將參數名稱從 docinfoid 改為 doclinksid
+      const response = await apiRequest<{ success: boolean; message: string }>(url, 'POST', { params: { doclinksid: attachmentId } });
+      console.log(`刪除附件 ${attachmentId} (使用 doclinksid) 的 API 回應:`, response);
+      if (!response || typeof response.success !== 'boolean') {
+         // 如果後端回應格式不符預期，拋出錯誤
+         throw new Error('刪除附件的 API 回應格式不正確');
+      }
+      return response;
+    } catch (error) {
+      console.error(`刪除附件 ${attachmentId} 失敗:`, error);
+      // 根據錯誤類型返回失敗訊息
+      return { success: false, message: error instanceof Error ? error.message : '刪除附件時發生未知錯誤' };
+    }
   }
 };
 
@@ -1227,6 +1256,11 @@ export const cmApi = {
       throw error; // 將錯誤向上拋出以便呼叫端處理
     }
   },
+
+  // 同樣地，如果 CM 工單也需要刪除附件，可以在 cmApi 中加入類似的函數，
+  // 或者將其提取到一個共用的 attachmentApi 模組中。
+  // 直接複用 PM 的實現 (如果後端端點相同)
+  deleteWorkOrderAttachment: pmApi.deleteWorkOrderAttachment
 };
 
 // 通用API功能
