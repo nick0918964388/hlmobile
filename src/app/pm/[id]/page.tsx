@@ -6,12 +6,13 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import ActualCheck from '@/components/ActualCheck';
 import WorkReport from '@/components/WorkReport';
 import SubmitModal from '@/components/SubmitModal';
-import api, { PMWorkOrderDetail, Manager, CheckItem, LaborResource, MaterialResource, ToolResource } from '@/services/api';
+import api, { PMWorkOrderDetail, Manager, CheckItem, LaborResource, MaterialResource, ToolResource, getManagerList } from '@/services/api';
+import { isWorkOrderEditable, getWorkOrderNonEditableReason } from '@/utils/workOrderUtils';
 
 export default function PMDetailPage({ params }: { params: { id: string } }) {
   const router = useRouter();
   const { language } = useLanguage();
-  const [activeTab, setActiveTab] = useState<'info' | 'actual' | 'report'>('info');
+  const [activeTab, setActiveTab] = useState('info');
   const [selectedStaff, setSelectedStaff] = useState({
     owner: '',
     lead: '',
@@ -52,63 +53,57 @@ export default function PMDetailPage({ params }: { params: { id: string } }) {
     endDate: ''
   });
 
-  // 從API獲取工單詳情
+  // 新增工單是否可編輯狀態
+  const [isEditable, setIsEditable] = useState(true);
+  // 新增不可編輯的提示信息
+  const [nonEditableReason, setNonEditableReason] = useState('');
+
+  // 從API獲取工單詳情數據
   useEffect(() => {
-    const fetchWorkOrderDetail = async () => {
+    const fetchWorkOrderDetails = async () => {
       try {
         setLoading(true);
-        const data = await api.pm.getWorkOrderDetail(params.id);
-        setWorkOrder(data);
+        const response = await api.pm.getWorkOrderDetail(params.id);
         
-        // 輸出附件數據，用於診斷
-        console.log('工單詳情:', data);
-        console.log('附件數據:', data.attachments);
-        
-        // 設置人員數據，如果API中有相應的欄位
-        if (data) {
-          const staffData = {
-            owner: data.owner || '',
-            lead: data.lead || '',
-            supervisor: data.supervisor || ''
-          };
+        if (response) {
+          // 設置工單詳情數據
+          setWorkOrder(response);
           
-          setSelectedStaff(staffData);
-          // 儲存原始人員數據，用於後續比較
-          setOriginalStaff(staffData);
+          // 檢查工單是否可編輯
+          const canEdit = isWorkOrderEditable(response.status);
+          setIsEditable(canEdit);
           
-          // 設置時間資料，如果API返回中有這些欄位
-          const timeData = {
-            startDate: data.startTime ? formatDateForInput(data.startTime) : '',
-            endDate: data.endTime ? formatDateForInput(data.endTime) : ''
-          };
-          
-          setMaintenanceTime(timeData);
-          // 儲存原始時間數據，用於後續比較
-          setOriginalTime(timeData);
-          
-          // 工單載入後立即檢查actual完成狀態
-          if (data.checkItems && data.checkItems.length > 0) {
-            const isActualComplete = data.checkItems.every(item => item.result !== '');
-            setActualCheckComplete(isActualComplete);
+          if (!canEdit) {
+            setNonEditableReason(getWorkOrderNonEditableReason(response.status));
           }
+          
+          // 設置維護時間
+          if (response.startTime || response.endTime) {
+            const newStartTime = response.startTime ? formatDateForInput(response.startTime) : '';
+            const newEndTime = response.endTime ? formatDateForInput(response.endTime) : '';
+            
+            setMaintenanceTime({
+              startDate: newStartTime,
+              endDate: newEndTime
+            });
+          }
+          
+          // 設置選中的負責人員
+          setSelectedStaff({
+            owner: response.owner || '',
+            lead: response.lead || '',
+            supervisor: response.supervisor || ''
+          });
         }
-      } catch (err) {
-        console.error('Error fetching work order detail:', err);
-        setError(err instanceof Error ? err : new Error('Unknown error occurred'));
+      } catch (error) {
+        console.error('獲取工單詳情失敗', error);
       } finally {
         setLoading(false);
       }
     };
-
-    fetchWorkOrderDetail();
+    
+    fetchWorkOrderDetails();
   }, [params.id]);
-
-  // 增加一個 useEffect 確保當沒有檢查項目時不會選擇 actual 標籤
-  useEffect(() => {
-    if (activeTab === 'actual' && workOrder && (!workOrder.checkItems || workOrder.checkItems.length === 0)) {
-      setActiveTab('info');
-    }
-  }, [workOrder, activeTab]);
 
   // 使用API獲取管理人員列表
   const [managerList, setManagerList] = useState<Manager[]>([]);
@@ -309,6 +304,46 @@ export default function PMDetailPage({ params }: { params: { id: string } }) {
     error: {
       zh: '載入錯誤',
       en: 'Error loading data'
+    },
+    info: {
+      zh: '基本信息',
+      en: 'Basic Information'
+    },
+    actual: {
+      zh: '實際檢查',
+      en: 'Actual Check'
+    },
+    report: {
+      zh: '工作報告',
+      en: 'Work Report'
+    },
+    basicInfo: {
+      zh: '基本信息',
+      en: 'Basic Information'
+    },
+    staffInfo: {
+      zh: '人員信息',
+      en: 'Staff Information'
+    },
+    maintenanceTime: {
+      zh: '維護時間',
+      en: 'Maintenance Time'
+    },
+    startTime: {
+      zh: '開始時間',
+      en: 'Start Time'
+    },
+    endTime: {
+      zh: '結束時間',
+      en: 'End Time'
+    },
+    pleaseSelect: {
+      zh: '請選擇',
+      en: 'Please select'
+    },
+    noData: {
+      zh: '沒有數據',
+      en: 'No data'
     }
   };
 
@@ -317,66 +352,70 @@ export default function PMDetailPage({ params }: { params: { id: string } }) {
   };
 
   const handleGoBack = () => {
+    // 直接確保localStorage中的tab值是最新的（確保當pmActiveTab值為有效值，如'assignToMe'時不被意外覆蓋）
+    const currentTab = localStorage.getItem('pmActiveTab');
+    if (currentTab && ['approved', 'inprogress', 'assignToMe', 'others'].includes(currentTab)) {
+      console.log('保留當前tab:', currentTab);
+    } else {
+      // 如果沒有有效的tab值或localStorage為空，則設置為'assignToMe'
+      localStorage.setItem('pmActiveTab', 'assignToMe');
+      console.log('設置tab為assignToMe');
+    }
     router.back();
   };
 
   const handleSave = async () => {
-    console.log('Saving work order');
+    // 工單不可編輯時，禁止保存
+    if (!isEditable) {
+      alert(nonEditableReason);
+      return;
+    }
     
+    // 原有的保存邏輯
     try {
       if (!workOrder) return;
       
+      setIsSubmitting(true);
+      
+      // 將時間轉換為ISO格式
+      const startISO = maintenanceTime.startDate ? convertInputDateToISO(maintenanceTime.startDate) : '';
+      const endISO = maintenanceTime.endDate ? convertInputDateToISO(maintenanceTime.endDate) : '';
+      
       // 準備更新數據
       const updateData: Partial<PMWorkOrderDetail> = {
+        id: workOrder.id,
+        status: workOrder.status,
         owner: selectedStaff.owner,
         lead: selectedStaff.lead,
-        supervisor: selectedStaff.supervisor
+        supervisor: selectedStaff.supervisor,
+        startTime: startISO,
+        endTime: endISO
       };
       
-      // 添加時間欄位，轉換為ISO格式
-      if (maintenanceTime.startDate) {
-        updateData.startTime = convertInputDateToISO(maintenanceTime.startDate);
-      }
-      
-      if (maintenanceTime.endDate) {
-        updateData.endTime = convertInputDateToISO(maintenanceTime.endDate);
-      }
-      
-      // 如果有更新後的檢查項目，則添加到更新數據中
-      if (updatedCheckItems.length > 0) {
+      // 如果有更新的檢查項目，添加到更新數據中
+      if (updatedCheckItems) {
         updateData.checkItems = updatedCheckItems;
       }
       
-      // 如果有更新後的資源數據，則添加到更新數據中
+      // 如果有更新的資源項目，添加到更新數據中
       if (updatedResources) {
         updateData.resources = updatedResources;
       }
       
-      console.log('Updating work order with data:', updateData);
-      
       // 調用API更新工單
       const updatedWorkOrder = await api.pm.updateWorkOrder(params.id, updateData);
       
-      // 更新本地狀態
+      // 更新數據
       setWorkOrder(updatedWorkOrder);
-      
-      // 更新原始數據，用於比較是否有變更
-      setOriginalStaff({...selectedStaff});
-      setOriginalTime({...maintenanceTime});
-      setUpdatedCheckItems([]);
-      setUpdatedResources(null);
-      
-      // 重置變更狀態
       setIsDirty(false);
       
-      // 顯示成功消息
-      alert(language === 'zh' ? '工單已成功保存！' : 'Work order saved successfully!');
+      // 顯示保存成功的訊息
+      alert(language === 'zh' ? '保存成功' : 'Save successful');
     } catch (error) {
-      console.error('Error saving work order:', error);
-      // 保存失敗時，顯示錯誤訊息，但不重置isDirty狀態
-      // 這樣保存按鈕仍然可以點擊，用戶可以重試
-      alert(language === 'zh' ? `保存工單失敗：${error instanceof Error ? error.message : '未知錯誤'}` : `Failed to save work order: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      // 不設置 setIsDirty(false)，保持按鈕可點擊狀態
+      console.error('保存失敗', error);
+      alert(language === 'zh' ? '保存失敗，請稍後再試' : 'Save failed, please try again later');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -664,9 +703,9 @@ export default function PMDetailPage({ params }: { params: { id: string } }) {
           <div className="flex space-x-2">
             <button 
               onClick={handleSave} 
-              disabled={!isDirty}
+              disabled={!isDirty || !isEditable}
               className={`border px-3 py-1 rounded ${
-                isDirty 
+                isDirty && isEditable 
                   ? "border-blue-600 text-blue-600 hover:bg-blue-50" 
                   : "border-gray-300 text-gray-300 cursor-not-allowed"
               }`}
@@ -675,8 +714,8 @@ export default function PMDetailPage({ params }: { params: { id: string } }) {
             </button>
             <button 
               onClick={handleComplete} 
-              disabled={isSubmitting}
-              className={`bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700 ${isSubmitting ? 'opacity-50 cursor-not-allowed' : ''}`}
+              disabled={isSubmitting || !isEditable}
+              className={`bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700 ${(isSubmitting || !isEditable) ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               {isSubmitting 
                 ? (language === 'zh' ? '處理中...' : 'Processing...') 
@@ -691,6 +730,11 @@ export default function PMDetailPage({ params }: { params: { id: string } }) {
           <div className="flex items-center space-x-2">
             <span className={`h-2 w-2 rounded-full ${getStatusColor()}`}></span>
             <span>{getStatusDisplay()}</span>
+            
+            {/* 不可編輯提示 */}
+            {!isEditable && (
+              <span className="ml-2 text-sm text-red-500">{nonEditableReason}</span>
+            )}
           </div>
         </div>
       </div>

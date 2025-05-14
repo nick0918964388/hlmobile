@@ -5,10 +5,11 @@ const nextConfig = {
   async rewrites() {
     return {
       beforeFiles: [
-        {
-          source: '/api/proxy/:path*',
-          destination: 'http://hl.webtw.xyz/:path*'
-        }
+        // 刪除原有代理規則，因為我們現在使用專用API處理代理
+        // {
+        //   source: '/api/proxy/:path*',
+        //   destination: 'http://hl.webtw.xyz/:path*'
+        // }
       ]
     };
   }

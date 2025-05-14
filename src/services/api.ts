@@ -300,37 +300,41 @@ const API_CONFIG = {
 
 // 建構API URL的輔助函數
 const buildApiUrl = (scriptName: string, params?: Record<string, string | number | boolean>) => {
-  // 判斷是否在客戶端且是生產環境，如果是則使用代理
-  const isClient = typeof window !== 'undefined';
-  const isProduction = process.env.NODE_ENV === 'production';
+  // 如果環境變數有設定使用代理，或是明確要求使用代理，則使用代理API
+  const useProxy = process.env.NEXT_PUBLIC_USE_PROXY === 'true' || true; // 預設總是使用代理
   
-  let url;
-  if (isClient && isProduction) {
-    // 使用代理路徑，去除原本的基本 URL
-    const apiPath = API_CONFIG.maxApiPath.startsWith('/') 
-      ? API_CONFIG.maxApiPath.substring(1) 
-      : API_CONFIG.maxApiPath;
-    url = `/api/proxy/${apiPath}/${scriptName}`;
-  } else {
-    // 開發環境使用原始設定
-    url = `${API_CONFIG.baseUrl}${API_CONFIG.maxApiPath}/${scriptName}`;
+  // 構建原始API URL
+  const baseUrl = `http://hl.webtw.xyz/maximo/oslc/script/${scriptName}`;
+  
+  // 添加必要的查詢參數
+  const queryParams: Record<string, any> = {};
+  
+  if (API_CONFIG.lean) {
+    queryParams.lean = 1;
   }
-  
-  const queryParams = API_CONFIG.lean ? { lean: 1 } : {};
   
   if (params) {
     Object.assign(queryParams, params);
   }
   
-  const queryString = Object.entries(queryParams)
-    .map(([key, value]) => `${key}=${encodeURIComponent(String(value))}`)
-    .join('&');
-  
-  if (queryString) {
-    url += `?${queryString}`;
+  // 構建原始URL的查詢部分
+  let originalUrl = baseUrl;
+  if (Object.keys(queryParams).length > 0) {
+    const queryString = Object.entries(queryParams)
+      .map(([key, value]) => `${key}=${encodeURIComponent(String(value))}`)
+      .join('&');
+    originalUrl += (originalUrl.includes('?') ? '&' : '?') + queryString;
   }
   
-  return url;
+  // 如果使用代理，將完整URL傳遞給代理API
+  if (useProxy) {
+    // 使用代理API路由
+    const proxyUrl = `/api/proxy?url=${encodeURIComponent(originalUrl)}`;
+    return proxyUrl;
+  } else {
+    // 直接使用原始API
+    return originalUrl;
+  }
 };
 
 // 通用API請求函數
@@ -340,9 +344,15 @@ const apiRequest = async <T>(
   body?: any
 ): Promise<T> => {
   try {
+    // 使用代理API
+    const isProxyUrl = url.startsWith('/api/proxy');
+    
     const options: RequestInit = {
       method,
-      headers: API_CONFIG.headers,
+      headers: {
+        'Content-Type': 'application/json',
+        // 其他必要的標頭
+      },
       credentials: 'include', // 包含跨域Cookie
     };
     
@@ -350,6 +360,7 @@ const apiRequest = async <T>(
       options.body = JSON.stringify(body);
     }
     
+    console.log('向API發送請求:', url);
     const response = await fetch(url, options);
     
     // 嘗試解析回應內容，無論狀態碼如何
@@ -858,13 +869,16 @@ export const cmApi = {
         throw new Error(`Work order with ID ${id} not found`);
       }
       
-      // 如果有資源數據，添加到工單詳情中
-      try {
-        const resources = await cmApi.getWorkOrderResources(id);
-        detail.resources = resources;
-      } catch (error) {
-        console.error('Failed to fetch resources for work order:', id, error);
-        // 失敗時不阻塞主要數據返回
+      // 在模擬資料模式下，直接從模擬資料中獲取資源數據
+      if (data.cm.resources && data.cm.resources[id]) {
+        detail.resources = data.cm.resources[id];
+      } else {
+        // 設置空的資源結構
+        detail.resources = {
+          labor: [],
+          materials: [],
+          tools: []
+        };
       }
       
       return detail;
@@ -984,9 +998,27 @@ export const cmApi = {
       // 保留原有模擬實現...
     }
     
-    // 使用實際API
-    const url = buildApiUrl('MOBILEAPP_UPDATE_CM_WORKORDER', { wonum: id });
-    return apiRequest<CMWorkOrderDetail>(url, 'POST', { params: { workOrder } });
+    // 處理 isCompleted 欄位格式轉換 (boolean -> 'Y'/'N')
+    const modifiedWorkOrder: any = { ...workOrder };
+    if (modifiedWorkOrder.isCompleted !== undefined) {
+      console.log('原始 isCompleted 值:', modifiedWorkOrder.isCompleted, typeof modifiedWorkOrder.isCompleted);
+      
+      // 確保將布林值轉換為 'Y'/'N' 字串
+      if (typeof modifiedWorkOrder.isCompleted === 'boolean') {
+        modifiedWorkOrder.isCompleted = modifiedWorkOrder.isCompleted ? 'Y' : 'N';
+      } else if (modifiedWorkOrder.isCompleted === true || modifiedWorkOrder.isCompleted === 1) {
+        modifiedWorkOrder.isCompleted = 'Y';
+      } else if (modifiedWorkOrder.isCompleted === false || modifiedWorkOrder.isCompleted === 0) {
+        modifiedWorkOrder.isCompleted = 'N';
+      }
+      
+      console.log('轉換後 isCompleted 值:', modifiedWorkOrder.isCompleted);
+    }
+    
+    // 使用與PM工單相同的更新API
+    console.log('使用PM工單API更新CM工單:', modifiedWorkOrder);
+    const url = buildApiUrl('MOBILEAPP_UPDATE_PM_WORKORDER', { wonum: id });
+    return apiRequest<CMWorkOrderDetail>(url, 'POST', { params: { workOrder: modifiedWorkOrder } });
   },
   
   // 建立新的CM工單
@@ -1111,75 +1143,73 @@ export const cmApi = {
     return apiRequest<CMWorkOrderDetail>(url, 'POST', requestBody);
   },
   
-  // 獲取CM工單的資源數據
+  // 獲取CM工單資源 - 已棄用，請使用 getWorkOrderDetail API
   getWorkOrderResources: async (id: string): Promise<{
     labor: LaborResource[];
     materials: MaterialResource[];
     tools: ToolResource[];
   }> => {
+    // 標記為棄用
+    console.warn('方法已棄用: cmApi.getWorkOrderResources 將在未來版本中移除');
+    console.warn('請使用 cmApi.getWorkOrderDetail API 來取得工單資源，resources 已整合到工單詳情中');
+    
     // 判斷是否使用模擬資料
     if (process.env.NEXT_PUBLIC_USE_MOCK_DATA === 'true') {
       await simulateApiDelay();
-      
-      // 模擬資源數據
+      // 模擬資料，與原來相同...
       return {
         labor: [
           {
             id: 'L001',
-            name: '維修工程師',
-            laborCode: 'REPAIR',
-            craftType: '電子',
-            hours: 3.5,
-            startTime: '2023-05-15T09:00:00',
-            endTime: '2023-05-15T12:30:00',
-            rate: 550,
-            cost: 1925
+            name: '張工程師',
+            laborCode: 'ENG001',
+            craftType: '機械工程師',
+            hours: 2.5,
+            rate: 800,
+            cost: 2000
           },
           {
             id: 'L002',
-            name: '助理技術員',
-            laborCode: 'ASST',
-            craftType: '電氣',
-            hours: 2,
-            startTime: '2023-05-15T13:00:00',
-            endTime: '2023-05-15T15:00:00',
-            rate: 300,
-            cost: 600
+            name: '李技師',
+            laborCode: 'TECH002',
+            craftType: '電機技師',
+            hours: 1.5,
+            rate: 650,
+            cost: 975
           }
         ],
         materials: [
           {
             id: 'M001',
-            itemNum: 'CM001',
-            name: '控制板',
-            description: '主控制電路板',
-            quantity: 1,
+            itemNum: 'PART001',
+            name: '軸承',
+            description: '高速軸承',
+            quantity: 2,
             unitCost: 1500,
-            totalCost: 1500,
-            itemType: '零件',
-            location: '倉庫C'
+            totalCost: 3000,
+            itemType: '備品',
+            location: '倉庫A'
           },
           {
             id: 'M002',
-            itemNum: 'CM002',
-            name: '連接線',
-            description: '高壓連接線',
+            itemNum: 'PART002',
+            name: '油封',
+            description: '耐高溫油封',
             quantity: 3,
-            unitCost: 100,
-            totalCost: 300,
-            itemType: '耗材',
-            location: '倉庫A'
+            unitCost: 800,
+            totalCost: 2400,
+            itemType: '消耗品',
+            location: '倉庫B'
           }
         ],
         tools: [
           {
             id: 'T001',
-            toolCode: 'CMTL001',
-            name: '電壓測試儀',
-            description: '高精度電壓測試儀',
+            toolCode: 'TOOL001',
+            name: '板手組',
+            description: '各尺寸板手組',
             quantity: 1,
-            hours: 2,
-            rate: 150,
+            hours: 2.5,
             location: '工具室A'
           },
           {
@@ -1196,6 +1226,7 @@ export const cmApi = {
     }
     
     // 使用實際API
+    console.warn('API 將在未來版本中移除: MOBILEAPP_GET_CM_WORKORDER_RESOURCES');
     const url = buildApiUrl('MOBILEAPP_GET_CM_WORKORDER_RESOURCES', { wonum: id });
     return apiRequest<{
       labor: LaborResource[];

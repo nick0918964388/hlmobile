@@ -12,13 +12,41 @@ import { useUser } from '@/contexts/UserContext';
 
 export default function CMPage() {
   const [showSidebar, setShowSidebar] = useState(false);
-  const [activeTab, setActiveTab] = useState<'approved' | 'inprogress' | 'assignToMe' | 'others'>('approved');
-  const mainContentRef = useRef<HTMLDivElement>(null);
-  const router = useRouter();
-  const { language } = useLanguage();
   const [showReportForm, setShowReportForm] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const { user } = useUser();
+  
+  // 使用基本默認值初始化activeTab
+  const [activeTab, setActiveTab] = useState<'approved' | 'inprogress' | 'assignToMe' | 'others'>('approved');
+  
+  // 使用useEffect同步localStorage和狀態
+  useEffect(() => {
+    // 從localStorage獲取保存的標籤值
+    const savedTab = localStorage.getItem('cmActiveTab');
+    console.log('初始化useEffect獲取savedTab:', savedTab);
+    
+    // 只有當localStorage中有有效值且與當前狀態不同時才更新
+    if (savedTab && 
+        ['approved', 'inprogress', 'assignToMe', 'others'].includes(savedTab) && 
+        savedTab !== activeTab) {
+      console.log('從localStorage更新activeTab:', savedTab);
+      setActiveTab(savedTab as 'approved' | 'inprogress' | 'assignToMe' | 'others');
+    }
+  }, []);  // 只在組件掛載時執行
+  
+  // 當標籤變更時，保存到localStorage
+  useEffect(() => {
+    console.log('CM保存activeTab到localStorage:', activeTab);
+    localStorage.setItem('cmActiveTab', activeTab);
+  }, [activeTab]);
+  
+  const mainContentRef = useRef<HTMLDivElement>(null);
+  const router = useRouter();
+  const { language } = useLanguage();
+  const [searchInput, setSearchInput] = useState('');
+  const [filteredOptions, setFilteredOptions] = useState<EquipmentOption[]>([]);
+  const autocompleteRef = useRef<HTMLDivElement>(null);
+  const [managerList, setManagerList] = useState<Manager[]>([]);
   
   // 使用API服務獲取的數據
   const [cmRecords, setCmRecords] = useState<CMWorkOrder[]>([]);
@@ -43,12 +71,6 @@ export default function CMPage() {
   
   // Autocomplete相關狀態
   const [showOptions, setShowOptions] = useState(false);
-  const [searchInput, setSearchInput] = useState('');
-  const [filteredOptions, setFilteredOptions] = useState<EquipmentOption[]>([]);
-  const autocompleteRef = useRef<HTMLDivElement>(null);
-  
-  // 管理人員列表
-  const [managerList, setManagerList] = useState<Manager[]>([]);
   
   // 使用API服務獲取CM工單列表
   useEffect(() => {
@@ -395,7 +417,9 @@ export default function CMPage() {
   };
 
   const handleCardClick = (recordId: string) => {
-    console.log(`Starting work on maintenance record: ${recordId}`);
+    // 確保當前tab值被保存
+    localStorage.setItem('cmActiveTab', activeTab);
+    console.log('導航到詳情頁面前保存當前tab:', activeTab);
     router.push(`/cm/${recordId}`);
   };
 
@@ -764,7 +788,10 @@ export default function CMPage() {
                   ? 'text-blue-600 border-b-2 border-blue-600'
                   : 'text-gray-500'
               }`}
-              onClick={() => setActiveTab('approved')}
+              onClick={() => {
+                setActiveTab('approved');
+                console.log('切換到當前工作tab');
+              }}
             >
               {t('approved')}
             </button>
@@ -774,7 +801,10 @@ export default function CMPage() {
                   ? 'text-blue-600 border-b-2 border-blue-600'
                   : 'text-gray-500'
               }`}
-              onClick={() => setActiveTab('inprogress')}
+              onClick={() => {
+                setActiveTab('inprogress');
+                console.log('切換到進行中tab');
+              }}
             >
               {t('inprogress')}
             </button>
@@ -784,7 +814,10 @@ export default function CMPage() {
                   ? 'text-blue-600 border-b-2 border-blue-600'
                   : 'text-gray-500'
               }`}
-              onClick={() => setActiveTab('assignToMe')}
+              onClick={() => {
+                setActiveTab('assignToMe');
+                console.log('切換到等待核准tab');
+              }}
             >
               {t('assignToMe')}
             </button>
@@ -794,7 +827,10 @@ export default function CMPage() {
                   ? 'text-blue-600 border-b-2 border-blue-600'
                   : 'text-gray-500'
               }`}
-              onClick={() => setActiveTab('others')}
+              onClick={() => {
+                setActiveTab('others');
+                console.log('切換到其他tab');
+              }}
             >
               {t('others')}
             </button>
@@ -874,10 +910,9 @@ export default function CMPage() {
                       </div>
                       <div className="flex items-center">
                         <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
                         </svg>
-                        {record.systemEngineer}
+                        {language === 'zh' ? '指定人員: ' : 'Assigned To: '}{record.systemEngineer}
                       </div>
                     </div>
                   </div>

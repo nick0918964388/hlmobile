@@ -8,6 +8,7 @@ import CMActual from '@/components/CMActual';
 import SubmitModal from '@/components/SubmitModal';
 import CancelModal from '@/components/CancelModal';
 import api, { CMWorkOrderDetail, Manager, CheckItem, LaborResource, MaterialResource, ToolResource, getManagerList } from '@/services/api';
+import { isWorkOrderEditable, getWorkOrderNonEditableReason } from '@/utils/workOrderUtils';
 
 export default function CMDetailPage({ params }: { params: { id: string } }) {
   const router = useRouter();
@@ -61,13 +62,18 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
     abnormalType: ''
   });
   
-  // 編輯狀態追蹤
+  // 新增編輯狀態追踪
   const [editing, setEditing] = useState({
     description: false,
     assets: false,
     abnormalType: false
   });
-
+  
+  // 新增工單是否可編輯狀態
+  const [isEditable, setIsEditable] = useState(true);
+  // 新增不可編輯的提示信息
+  const [nonEditableReason, setNonEditableReason] = useState('');
+  
   // 新增API數據相關狀態
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [workOrder, setWorkOrder] = useState<any>(null);
@@ -75,6 +81,15 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
   const [staffList, setStaffList] = useState<any[]>([]);
   const [managerList, setManagerList] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
+  
+  // 添加 isSubmitting 狀態
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // 添加模態對話框相關狀態
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [showSubmitModal, setShowSubmitModal] = useState(false);
+  const [submitSuccess, setSubmitSuccess] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
   
   // 異常類型選項
   const abnormalOptions = [
@@ -94,6 +109,19 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
       const date = new Date(dateString);
       // 轉換為 YYYY-MM-DDThh:mm 格式，保留原始時區
       return date.toISOString().slice(0, 16);
+    } catch (e) {
+      console.error('日期格式轉換錯誤:', e);
+      return '';
+    }
+  };
+
+  // 添加從datetime-local輸入框格式轉換為ISO格式的函數
+  const convertInputDateToISO = (inputDate: string): string => {
+    if (!inputDate) return '';
+    
+    try {
+      const date = new Date(inputDate);
+      return date.toISOString();
     } catch (e) {
       console.error('日期格式轉換錯誤:', e);
       return '';
@@ -149,6 +177,14 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
           // 設置工單詳情數據
           setWorkOrder(response);
           
+          // 檢查工單是否可編輯
+          const canEdit = isWorkOrderEditable(response.status);
+          setIsEditable(canEdit);
+          
+          if (!canEdit) {
+            setNonEditableReason(getWorkOrderNonEditableReason(response.status));
+          }
+          
           // 初始化可編輯欄位
           setEditableFields({
             description: response.description || '',
@@ -186,83 +222,26 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
           setSelectedStaff(staffData);
           setOriginalStaff(staffData);
           
-          // 設置Actual頁面的表單數據
-          if (response.failureDetails !== undefined || 
-              response.repairMethod !== undefined || 
-              response.downtimeHours !== undefined ||
-              response.downtimeMinutes !== undefined) {
-            console.log("設置Actual表單數據:", {
-              failureDetails: response.failureDetails,
-              repairMethod: response.repairMethod,
-              isCompleted: response.isCompleted,
-              downtimeHours: response.downtimeHours,
-              downtimeMinutes: response.downtimeMinutes
-            });
-            
-            setActualFormData({
-              failureDetails: response.failureDetails || '',
-              repairMethod: response.repairMethod || '',
-              isCompleted: response.isCompleted || false,
-              downtimeHours: response.downtimeHours || 0,
-              downtimeMinutes: response.downtimeMinutes || 0
-            });
-          }
-          
-          // 獲取設備選項和人員列表
-          const fetchAdditionalData = async () => {
-            try {
-              console.log("開始獲取額外資料");
-              
-              // 使用靜態模擬數據代替API調用
-              const mockEquipOptions = [
-                { id: 'P1THC-ZERO-C01', name: 'CUP ZEROC01 Zero Generator', location: 'F15/00203W02' },
-                { id: 'P3PLUMP-P-LOADZNG03A', name: 'Pump XXXXXXXX', location: 'F15/00203W02' },
-                { id: 'P4AIR-COMP-01', name: 'Air Compressor 01', location: 'F15/00204W01' }
-              ];
-              console.log("使用模擬設備選項:", mockEquipOptions);
-              setEquipmentOptions(mockEquipOptions);
-              
-              // 獲取人員列表
-              // const staff = await api.cm.getStaffList();
-              // console.log("人員列表:", staff);
-              // setStaffList(staff);
-              
-              // 使用靜態模擬數據代替API調用
-              const mockStaffList = [
-                { id: 'EMP001', name: '張三', role: '技術員' },
-                { id: 'EMP002', name: '李四', role: '維護工程師' },
-                { id: 'EMP003', name: '王五', role: '資深技術員' }
-              ];
-              console.log("使用模擬人員列表:", mockStaffList);
-              setStaffList(mockStaffList);
-              
-              try {
-                // 獲取管理人員列表
-                console.log("開始獲取管理人員列表...");
-                const manager = await getManagerList();
-                console.log("管理人員列表獲取成功:", manager);
-                setManagerList(manager);
-              } catch (managerError) {
-                console.error("獲取管理人員列表失敗:", managerError);
-                // 使用一般員工列表作為備用選項
-                console.log("使用模擬人員列表作為管理人員備用選項");
-                setManagerList(mockStaffList.map((s: { id: string; name: string; role: string }) => ({...s, role: '員工'})));
-              }
-              
-              console.log("額外資料獲取完成");
-            } catch (error) {
-              console.error('獲取額外數據失敗:', error);
-            }
+          // 設置Actual頁籤數據
+          const actualData = {
+            failureDetails: response.failureDetails || '',
+            repairMethod: response.repairMethod || '',
+            isCompleted: !!response.isCompleted,
+            downtimeHours: response.downtimeHours !== undefined ? String(response.downtimeHours) : '0',
+            downtimeMinutes: response.downtimeMinutes !== undefined ? String(response.downtimeMinutes) : '0'
           };
           
-          fetchAdditionalData();
-        } else {
-          console.error('API返回空的工單詳情');
-          setError('工單詳情不存在或已被刪除');
+          console.log("設置Actual頁籤數據:", actualData);
+          setActualFormData(actualData);
+          
+          // 從工單詳情中直接獲取資源數據，不需要再次呼叫 API
+          if (response.resources) {
+            console.log("使用工單詳情中的資源數據:", response.resources);
+            setResourcesData(response.resources);
+          }
         }
       } catch (error) {
-        console.error('獲取工單詳情失敗:', error);
-        setError('無法加載工單詳情，請稍後重試');
+        console.error("獲取工單詳情失敗:", error);
       } finally {
         setIsLoading(false);
       }
@@ -270,6 +249,23 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
     
     fetchWorkOrderDetails();
   }, [params.id]);
+
+  // 獲取管理人員列表（用於owner、lead、supervisor選擇）
+  useEffect(() => {
+    const fetchManagerList = async () => {
+      try {
+        console.log("開始獲取管理人員列表");
+        // 使用與PM工單相同的API獲取管理人員列表
+        const managers = await getManagerList();
+        console.log("獲取到管理人員列表:", managers);
+        setManagerList(managers);
+      } catch (error) {
+        console.error("獲取管理人員列表失敗:", error);
+      }
+    };
+
+    fetchManagerList();
+  }, []);
 
   // 監控數據變更狀態
   useEffect(() => {
@@ -364,6 +360,10 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
     WPCOND: {
       zh: '等待工廠條件',
       en: 'Waiting for Plant Condition'
+    },
+    WFA: {
+      zh: '等待核准',
+      en: 'Waiting for Approval'
     },
     APPR: {
       zh: '已核准',
@@ -508,97 +508,316 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
     selectStaff: {
       zh: '選擇人員',
       en: 'Select staff'
-    }
+    },
+    basicInfo: {
+      zh: '基本信息',
+      en: 'Basic Information'
+    },
+    workOrderId: {
+      zh: '工單號碼',
+      en: 'Work Order ID'
+    },
+    equipmentId: {
+      zh: '設備號碼',
+      en: 'Equipment ID'
+    },
+    equipmentName: {
+      zh: '設備名稱',
+      en: 'Equipment Name'
+    },
+    assets: {
+      zh: '故障設備',
+      en: 'Assets'
+    },
+    pleaseSelect: {
+      zh: '請選擇',
+      en: 'Please Select'
+    },
+    mechanical: {
+      zh: '機械',
+      en: 'Mechanical'
+    },
+    electrical: {
+      zh: '電氣',
+      en: 'Electrical'
+    },
+    hydraulic: {
+      zh: '液壓',
+      en: 'Hydraulic'
+    },
+    pneumatic: {
+      zh: '氣動',
+      en: 'Pneumatic'
+    },
+    other: {
+      zh: '其他',
+      en: 'Other'
+    },
+    maintenanceTime: {
+      zh: '維護時間',
+      en: 'Maintenance Time'
+    },
+    owner: {
+      zh: '負責人',
+      en: 'Owner'
+    },
+    lead: {
+      zh: '主導人員',
+      en: 'Lead'
+    },
+    supervisor: {
+      zh: '監督人員',
+      en: 'Supervisor'
+    },
+    staffInfo: {
+      zh: '人員資訊',
+      en: 'Staff Information'
+    },
+    noData: {
+      zh: '無數據',
+      en: 'No Data'
+    },
+    cancelWorkOrder: {
+      zh: '取消工單',
+      en: 'Cancel Work Order'
+    },
+    cancelWorkOrderConfirm: {
+      zh: '確定要取消此工單嗎？',
+      en: 'Are you sure you want to cancel this work order?'
+    },
+    submitWorkOrder: {
+      zh: '提交工單',
+      en: 'Submit Work Order'
+    },
+    submitWorkOrderConfirm: {
+      zh: '確定要提交此工單嗎？',
+      en: 'Are you sure you want to submit this work order?'
+    },
+    ownerToLead: {
+      zh: '由負責人指定領班',
+      en: 'Assign Lead by Owner'
+    },
+    leaderToSupervisor: {
+      zh: '由領班指定現場主管',
+      en: 'Assign Supervisor by Leader'
+    },
+    systemEngineer: {
+      zh: '指定人員',
+      en: 'Assigned To'
+    },
   };
 
   const t = (key: keyof typeof translations) => {
-    return translations[key][language];
+    if (!translations[key]) {
+      console.warn(`翻譯鍵 "${key}" 不存在`);
+      return String(key);
+    }
+    const currentLanguage = language || 'zh'; // 使用默認語言 'zh'
+    return translations[key][currentLanguage] || String(key);
   };
 
   const handleGoBack = () => {
+    // 直接返回上一頁，不需要對activeTab做任何處理
+    // localStorage中的cmActiveTab完全由list頁面管理
     router.back();
   };
 
-  // 更新保存功能以使用API
-  const handleSave = async () => {
+  // 保存欄位編輯
+  const startEditing = (field: 'description' | 'assets' | 'abnormalType') => {
+    // 如果工單不可編輯，則不允許開始編輯
+    if (!isEditable) {
+      alert(nonEditableReason);
+      return;
+    }
+    
+    setEditing({...editing, [field]: true});
+  };
+  
+  // 保存單個欄位並關閉編輯
+  const saveField = async (field: 'description' | 'assets' | 'abnormalType') => {
+    // 如果工單不可編輯，則不允許保存
+    if (!isEditable) {
+      alert(nonEditableReason);
+      return;
+    }
+    
     try {
-      // 格式化日期時間為ISO標準格式
-      const formatDateToISO = (dateTimeStr: string): string => {
-        if (!dateTimeStr) return '';
-        
-        try {
-          // 處理時區差異，使用戶看到的時間與API發送的時間保持一致
-          // 首先解析輸入的本地時間
-          const localDate = new Date(dateTimeStr);
-          
-          // 獲取當地時區偏移量（分鐘）
-          const offsetMinutes = localDate.getTimezoneOffset();
-          
-          // 創建一個新的日期，保持用戶輸入的時間不變，但正確調整為UTC
-          // 由於getTimezoneOffset()返回的是本地時間與UTC的差異（分鐘），正數表示本地時間落後於UTC
-          // 所以我們需要減去這個值來得到正確的UTC時間
-          const adjustedDate = new Date(localDate.getTime() - offsetMinutes * 60000);
-          
-          return adjustedDate.toISOString();
-        } catch (e) {
-          console.error('日期格式轉換錯誤:', e);
-          return '';
+      // 印出當前欄位的值，以便檢查
+      console.log(`Saving field ${field} with value:`, editableFields[field]);
+      
+      // 特別處理 abnormalType 欄位
+      if (field === 'abnormalType') {
+        console.log('Special handling for abnormal type field:', editableFields.abnormalType);
+        if (!editableFields.abnormalType) {
+          alert(language === 'zh' ? '請選擇異常類型' : 'Please select an abnormal type');
+          return;
         }
-      };
+      }
       
-      // 準備要保存的數據
-      const saveData = {
+      // 確保值不為undefined
+      const fieldValue = editableFields[field] || '';
+      
+      // 準備要保存的欄位數據
+      const fieldData = {
         id: params.id,
-        description: editableFields.description,
-        assets: editableFields.assets,
-        abnormalType: editableFields.abnormalType,
-        startTime: formatDateToISO(startTime),
-        endTime: formatDateToISO(endTime),
-        owner: selectedStaff.owner,
-        lead: selectedStaff.lead,
-        supervisor: selectedStaff.supervisor,
-        // 添加Actual頁面的表單數據
-        failureDetails: actualFormData.failureDetails,
-        repairMethod: actualFormData.repairMethod,
-        downtimeHours: actualFormData.downtimeHours,
-        downtimeMinutes: actualFormData.downtimeMinutes,
-        isCompleted: actualFormData.isCompleted,
-        // 添加Report頁面的資源數據
-        resources: resourcesData
+        [field]: fieldValue
       };
       
-      console.log('保存CM工單數據:', saveData);
+      // 印出將發送的數據
+      console.log('Data being sent to API:', fieldData);
+      console.log('Field value type:', typeof fieldValue);
       
-      // 調用API保存數據
-      const result = await api.cm.saveWorkOrder(saveData);
+      // 調用API保存特定欄位
+      await api.cm.saveWorkOrderField(fieldData);
       
-      // 保存成功後，先更新原始數據狀態
-      // 這樣當 useEffect 執行時，比較新舊數據會得出「沒有變更」的結果
-      setOriginalEditableFields({...editableFields});
-      setOriginalStaff({...selectedStaff});
+      // 關閉編輯狀態
+      setEditing({...editing, [field]: false});
+      
+      // 先保存當前的值，確保後續操作使用的是更新後的值
+      const updatedFields = {
+        ...originalEditableFields,
+        [field]: fieldValue
+      };
+      
+      // 更新原始欄位值
+      setOriginalEditableFields(updatedFields);
+      
+      // 檢查是否還有其他未保存的變更
+      const hasOtherChanges = 
+        JSON.stringify(updatedFields) !== JSON.stringify(editableFields) ||
+        JSON.stringify(selectedStaff) !== JSON.stringify(originalStaff) ||
+        JSON.stringify(startTime) !== JSON.stringify(originalStartTime) ||
+        JSON.stringify(endTime) !== JSON.stringify(originalEndTime);
+      
+      // 如果已經沒有變更，設置 isDirty 為 false
+      setIsDirty(hasOtherChanges);
+      
+      // 顯示成功訊息
+      // alert(language === 'zh' ? '欄位已保存' : 'Field saved');
+      
+    } catch (error) {
+      console.error(`Error saving field ${field}:`, error);
+      alert(language === 'zh' ? '保存失敗，請稍後再試' : 'Save failed, please try again later');
+      // 如果保存失敗，但不要關閉編輯狀態
+    }
+  };
+  
+  // 取消編輯
+  const cancelEditing = (field: 'description' | 'assets' | 'abnormalType') => {
+    // 重設為原始值
+    setEditableFields({
+      ...editableFields,
+      [field]: originalEditableFields[field]
+    });
+    // 關閉編輯狀態
+    setEditing({...editing, [field]: false});
+  };
+
+  // 處理整個表單保存
+  const handleSave = async () => {
+    // 如果工單不可編輯，則不允許保存
+    if (!isEditable) {
+      alert(nonEditableReason);
+      return;
+    }
+    
+    try {
+      if (!workOrder) return;
+      
+      setIsSubmitting(true);
+      
+      // 準備更新數據
+      const updateData: any = {
+        id: workOrder.id
+      };
+      
+      // 如果時間有變更，添加到更新數據中
+      if (startTime !== originalStartTime) {
+        updateData.startTime = startTime ? convertInputDateToISO(startTime) : null;
+      }
+      
+      if (endTime !== originalEndTime) {
+        updateData.endTime = endTime ? convertInputDateToISO(endTime) : null;
+      }
+      
+      // 如果人員數據有變更，添加到更新數據中
+      if (JSON.stringify(selectedStaff) !== JSON.stringify(originalStaff)) {
+        updateData.owner = selectedStaff.owner;
+        updateData.lead = selectedStaff.lead;
+        updateData.supervisor = selectedStaff.supervisor;
+      }
+      
+      // 如果actual表單數據有變更，添加到更新數據中
+      if (actualFormData && activeTab === 'actual') {
+        updateData.failureDetails = actualFormData.failureDetails;
+        updateData.repairMethod = actualFormData.repairMethod;
+        updateData.isCompleted = actualFormData.isCompleted;
+        updateData.downtimeHours = actualFormData.downtimeHours;
+        updateData.downtimeMinutes = actualFormData.downtimeMinutes;
+      }
+      
+      // 調用API更新工單
+      await api.cm.updateWorkOrder(params.id, updateData);
+      
+      // 記錄新的原始值，用於檢測變更
       setOriginalStartTime(startTime);
       setOriginalEndTime(endTime);
+      setOriginalStaff({...selectedStaff});
       
-      // 確保 useState 是同步的
-      const updatedOriginalFields = {...editableFields};
-      const updatedOriginalStaff = {...selectedStaff};
-      const updatedOriginalStartTime = startTime;
-      const updatedOriginalEndTime = endTime;
-      
-      // 直接設置所有變更狀態為 false
+      // 重置變更狀態
       setIsDirty(false);
-      setActualFormChanged(false);
-      setReportFormChanged(false);
+      setIsSubmitting(false);
       
       // 顯示成功訊息
       alert(language === 'zh' ? '保存成功' : 'Save successful');
+      
     } catch (error) {
-      console.error('Error saving work order:', error);
-      // 保存失敗時，顯示錯誤訊息，但不重置isDirty狀態
-      // 這樣保存按鈕仍然可以點擊，用戶可以重試
-      alert(language === 'zh' ? `保存失敗：${error instanceof Error ? error.message : '未知錯誤'}` : `Save failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      // 不設置 setIsDirty(false)，按鈕保持可點擊狀態
+      console.error('保存失敗', error);
+      alert(language === 'zh' ? '保存失敗，請稍後再試' : 'Save failed, please try again later');
+      setIsSubmitting(false);
     }
+  };
+
+  // 工單狀態顯示
+  const getStatusDisplay = () => {
+    if (!workOrder) return '';
+    const status = workOrder.status as keyof typeof statusTranslations;
+    // 始終返回英文狀態，不考慮當前語言設置
+    return statusTranslations[status]?.en || status;
+  };
+
+  // 工單狀態顏色
+  const getStatusColor = () => {
+    if (!workOrder) return 'bg-gray-500';
+    
+    switch (workOrder.status) {
+      case 'WAPPR':
+      case 'WMATL':
+      case 'WSCH':
+      case 'WSCHED':
+      case 'WPCOND':
+        return 'bg-yellow-500';
+      case 'APPR':
+      case 'INPRG':
+        return 'bg-blue-500';
+      case 'COMP':
+        return 'bg-green-500';
+      case 'CLOSE':
+        return 'bg-gray-500';
+      case 'CAN':
+        return 'bg-red-500';
+      default:
+        return 'bg-gray-500';
+    }
+  };
+
+  // 檢查是否所有必填欄位都已填寫
+  const isMaintenanceInfoComplete = () => {
+    return startTime && 
+           endTime && 
+           selectedStaff.owner &&
+           selectedStaff.lead &&
+           selectedStaff.supervisor;
   };
 
   // 建立一個新的函數來處理狀態特定的按鈕文字
@@ -716,124 +935,6 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
   const handleActualCheckCompleteChange = (isComplete: boolean) => {
     setActualCheckComplete(isComplete);
   };
-
-  // 工單狀態顯示
-  const getStatusDisplay = () => {
-    if (!workOrder) return '';
-    const status = workOrder.status as keyof typeof statusTranslations;
-    return statusTranslations[status]?.[language] || status;
-  };
-
-  // 工單狀態顏色
-  const getStatusColor = () => {
-    if (!workOrder) return 'bg-gray-500';
-    
-    switch (workOrder.status) {
-      case 'WAPPR':
-      case 'WMATL':
-      case 'WSCH':
-      case 'WSCHED':
-      case 'WPCOND':
-        return 'bg-yellow-500';
-      case 'APPR':
-      case 'INPRG':
-        return 'bg-blue-500';
-      case 'COMP':
-        return 'bg-green-500';
-      case 'CLOSE':
-        return 'bg-gray-500';
-      case 'CAN':
-        return 'bg-red-500';
-      default:
-        return 'bg-gray-500';
-    }
-  };
-
-  // 檢查是否所有必填欄位都已填寫
-  const isMaintenanceInfoComplete = () => {
-    return startTime && 
-           endTime && 
-           selectedStaff.owner &&
-           selectedStaff.lead &&
-           selectedStaff.supervisor;
-  };
-
-  // 保存單個欄位並關閉編輯
-  const saveField = async (field: 'description' | 'assets' | 'abnormalType') => {
-    try {
-      // 印出當前欄位的值，以便檢查
-      console.log(`Saving field ${field} with value:`, editableFields[field]);
-      
-      // 特別處理 abnormalType 欄位
-      if (field === 'abnormalType') {
-        console.log('Special handling for abnormal type field:', editableFields.abnormalType);
-        if (!editableFields.abnormalType) {
-          alert(language === 'zh' ? '請選擇異常類型' : 'Please select an abnormal type');
-          return;
-        }
-      }
-      
-      // 確保值不為undefined
-      const fieldValue = editableFields[field] || '';
-      
-      // 準備要保存的欄位數據
-      const fieldData = {
-        id: params.id,
-        [field]: fieldValue
-      };
-      
-      // 印出將發送的數據
-      console.log('Data being sent to API:', fieldData);
-      console.log('Field value type:', typeof fieldValue);
-      
-      // 調用API保存特定欄位
-      await api.cm.saveWorkOrderField(fieldData);
-      
-      // 關閉編輯狀態
-      setEditing({...editing, [field]: false});
-      
-      // 先保存當前的值，確保後續操作使用的是更新後的值
-      const updatedFields = {
-        ...originalEditableFields,
-        [field]: fieldValue
-      };
-      
-      // 更新原始欄位值
-      setOriginalEditableFields(updatedFields);
-      
-      // 檢查是否還有其他未保存的變更
-      const hasOtherChanges = 
-        JSON.stringify(updatedFields) !== JSON.stringify(editableFields) ||
-        JSON.stringify(selectedStaff) !== JSON.stringify(originalStaff) ||
-        JSON.stringify(startTime) !== JSON.stringify(originalStartTime) ||
-        JSON.stringify(endTime) !== JSON.stringify(originalEndTime);
-      
-      // 如果已經沒有變更，設置 isDirty 為 false
-      setIsDirty(hasOtherChanges);
-      
-      // 操作成功的提示
-      console.log(`Field ${field} saved successfully with value: "${fieldValue}"`);
-      
-    } catch (error) {
-      console.error(`Failed to save field ${field}:`, error);
-      alert(language === 'zh' ? `保存失敗：${error instanceof Error ? error.message : '未知錯誤'}` : `Save failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  };
-
-  // 取消編輯並重置為原始值
-  const cancelEdit = (field: 'description' | 'assets' | 'abnormalType') => {
-    setEditableFields({
-      ...editableFields, 
-      [field]: originalEditableFields[field]
-    });
-    setEditing({...editing, [field]: false});
-  };
-
-  const [showSubmitModal, setShowSubmitModal] = useState(false);
-  const [showCancelModal, setShowCancelModal] = useState(false);
-  const [isCancelling, setIsCancelling] = useState(false);
-  const [submitSuccess, setSubmitSuccess] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // 處理提交工單請求
   const handleSubmitWorkOrder = async (comment: string) => {
@@ -993,9 +1094,9 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
             </button>
             <button 
               onClick={handleSave} 
-              disabled={!isDirty}
+              disabled={!isDirty || !isEditable}
               className={`border px-3 py-1 rounded ${
-                isDirty 
+                isDirty && isEditable 
                   ? "border-blue-600 text-blue-600 hover:bg-blue-50" 
                   : "border-gray-300 text-gray-300 cursor-not-allowed"
               }`}
@@ -1004,8 +1105,8 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
             </button>
             <button 
               onClick={handleComplete} 
-              disabled={isSubmitting}
-              className={`bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700 ${isSubmitting ? 'opacity-50 cursor-not-allowed' : ''}`}
+              disabled={isSubmitting || !isEditable}
+              className={`bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700 ${(isSubmitting || !isEditable) ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               {isSubmitting 
                 ? (language === 'zh' ? '處理中...' : 'Processing...') 
@@ -1020,433 +1121,434 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
           <div className="flex items-center space-x-2">
             <span className={`h-2 w-2 rounded-full ${getStatusColor()}`}></span>
             <span>{getStatusDisplay()}</span>
+            
+            {/* 不可編輯提示 - 強制使用英文 */}
+            {!isEditable && (
+              <span className="ml-2 text-sm text-red-500">{'Work order status is Waiting for Approval (WFA), cannot modify any content'}</span>
+            )}
           </div>
         </div>
       </div>
 
       {/* 主要內容區域 - 可滾動 */}
       <div className="flex-1 overflow-auto">
-        {/* 基本資訊頁面 */}
-        {activeTab === 'info' && (
-          <div className="bg-white">
-            <div className="divide-y">
-              <div className="flex px-4 py-3">
-                <div className="w-28 text-gray-600">{t('openTime')}</div>
-                <div className="flex-1">{workOrder.openTime}</div>
-                <div className="text-red-500 font-medium">{workOrder.creator}</div>
-              </div>
-
-              <div className="flex px-4 py-3">
-                <div className="w-28 text-gray-600">{t('factoryCategory')}</div>
-                <div className="flex-1">{workOrder.systemCode} {workOrder.equipmentCode}</div>
-              </div>
-
-              {/* 可編輯的描述欄位 */}
-              <div className="flex px-4 py-3">
-                <div className="w-28 text-gray-600">{t('description')}</div>
-                <div className="flex-1">
-                  {editing.description ? (
-                    <div className="relative">
-                      <textarea
-                        className="w-full border rounded-md px-3 py-2 focus:outline-none focus:border-blue-500"
-                        value={editableFields.description}
-                        onChange={(e) => setEditableFields({...editableFields, description: e.target.value})}
-                        rows={2}
-                        autoFocus
-                      />
-                      <div className="flex justify-end space-x-2 mt-2">
-                        <button 
-                          className="px-2 py-1 text-sm bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
-                          onClick={() => cancelEdit('description')}
-                        >
-                          {t('cancel')}
-                        </button>
-                        <button 
-                          className="px-2 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600"
-                          onClick={() => saveField('description')}
-                        >
-                          {t('save')}
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div 
-                      className="py-1 px-2 -mx-2 rounded hover:bg-blue-50 cursor-pointer flex"
-                      onClick={() => setEditing({...editing, description: true})}
-                    >
-                      <div className="flex-1">{editableFields.description}</div>
-                      <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                      </svg>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* 可編輯的資產欄位 */}
-              <div className="flex px-4 py-3">
-                <div className="w-28 text-gray-600">{t('asset')}</div>
-                <div className="flex-1">
-                  {editing.assets ? (
-                    <div className="relative">
-                      <select
-                        className="w-full border rounded-md px-3 py-2 focus:outline-none focus:border-blue-500"
-                        value={editableFields.assets}
-                        onChange={(e) => setEditableFields({...editableFields, assets: e.target.value})}
-                        autoFocus
-                      >
-                        {equipmentOptions.map((equipment: any) => (
-                          <option key={equipment.id} value={equipment.id}>
-                            {equipment.id} - {equipment.name}
-                          </option>
-                        ))}
-                      </select>
-                      <div className="flex justify-end space-x-2 mt-2">
-                        <button 
-                          className="px-2 py-1 text-sm bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
-                          onClick={() => cancelEdit('assets')}
-                        >
-                          {t('cancel')}
-                        </button>
-                        <button 
-                          className="px-2 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600"
-                          onClick={() => saveField('assets')}
-                        >
-                          {t('save')}
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div 
-                      className="py-1 px-2 -mx-2 rounded hover:bg-blue-50 cursor-pointer flex"
-                      onClick={() => setEditing({...editing, assets: true})}
-                    >
-                      <div className="flex-1">
-                        {editableFields.assets}
-                      </div>
-                      <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                      </svg>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="flex px-4 py-3">
-                <div className="w-28 text-gray-600">{t('location')}</div>
-                <div className="flex-1">{workOrder.location}</div>
-              </div>
-
-              <div className="flex px-4 py-3">
-                <div className="w-28 text-gray-600">{t('equipmentType')}</div>
-                <div className="flex-1">{workOrder.equipmentType}</div>
-              </div>
-
-              {/* 可編輯的異常類型欄位 */}
-              <div className="flex px-4 py-3">
-                <div className="w-28 text-gray-600">{t('abnormalType')}</div>
-                <div className="flex-1">
-                  {editing.abnormalType ? (
-                    <div className="relative">
-                      <select
-                        className="w-full border rounded-md px-3 py-2 focus:outline-none focus:border-blue-500"
-                        value={editableFields.abnormalType}
-                        onChange={(e) => {
-                          console.log('選擇異常類型值:', e.target.value);
-                          setEditableFields({...editableFields, abnormalType: e.target.value});
-                        }}
-                        autoFocus
-                      >
-                        <option value="">Please select abnormal type</option>
-                        {abnormalOptions.map(option => (
-                          <option key={option} value={option}>
-                            {option}
-                          </option>
-                        ))}
-                      </select>
-                      <div className="mt-1 text-xs text-gray-500">
-                        Current selected: {editableFields.abnormalType || '(None)'}
-                      </div>
-                      <div className="flex justify-end space-x-2 mt-2">
-                        <button 
-                          className="px-2 py-1 text-sm bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
-                          onClick={() => cancelEdit('abnormalType')}
-                        >
-                          {t('cancel')}
-                        </button>
-                        <button 
-                          className="px-2 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600"
-                          onClick={() => {
-                            console.log('點擊保存按鈕，異常類型值:', editableFields.abnormalType);
-                            saveField('abnormalType');
-                          }}
-                        >
-                          {t('save')}
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div 
-                      className="py-1 px-2 -mx-2 rounded hover:bg-blue-50 cursor-pointer flex"
-                      onClick={() => setEditing({...editing, abnormalType: true})}
-                    >
-                      <div className="flex-1">
-                        {editableFields.abnormalType || '(Please select abnormal type)'}
-                      </div>
-                      <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                      </svg>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="flex px-4 py-3">
-                <div className="w-28 text-gray-600">{t('reportTime')}</div>
-                <div className="flex-1">{workOrder.reportTime}</div>
-              </div>
-
-              <div className="flex px-4 py-3">
-                <div className="w-28 text-gray-600">{t('reportPerson')}</div>
-                <div className="flex-1 text-red-500 font-medium">{workOrder.reportPerson}</div>
-              </div>
-            </div>
-
-            {/* 維修時間和負責人員 */}
-            <div className="p-4 space-y-4 border-t">
-              {/* 時間快速設置按鈕 */}
-              <div className="flex items-center justify-between mb-2">
-                <div className="text-sm text-gray-600 font-medium">{language === 'zh' ? '快速時間設置:' : 'Quick Time Set:'}</div>
-                <div className="flex space-x-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      // 創建一個新的日期對象
-                      const now = new Date();
-                      // 調整為UTC+8時區，加上8小時
-                      const utc8Now = new Date(now.getTime() + 8 * 60 * 60 * 1000);
-                      const startTimeValue = utc8Now.toISOString().slice(0, 16);
-                      // 加1小時
-                      const endTimeValue = new Date(utc8Now.getTime() + 1 * 60 * 60 * 1000).toISOString().slice(0, 16);
-                      
-                      setStartTime(startTimeValue);
-                      setEndTime(endTimeValue);
-                    }}
-                    className="flex items-center justify-center bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-full w-8 h-8"
-                    title={language === 'zh' ? '設置為當前時間 + 1小時 (UTC+8)' : 'Set current time + 1 hour (UTC+8)'}
-                  >
-                    <span className="text-xs font-semibold">+1h</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      // 創建一個新的日期對象
-                      const now = new Date();
-                      // 調整為UTC+8時區，加上8小時
-                      const utc8Now = new Date(now.getTime() + 8 * 60 * 60 * 1000);
-                      const startTimeValue = utc8Now.toISOString().slice(0, 16);
-                      // 加2小時
-                      const endTimeValue = new Date(utc8Now.getTime() + 2 * 60 * 60 * 1000).toISOString().slice(0, 16);
-                      
-                      setStartTime(startTimeValue);
-                      setEndTime(endTimeValue);
-                    }}
-                    className="flex items-center justify-center bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-full w-8 h-8"
-                    title={language === 'zh' ? '設置為當前時間 + 2小時 (UTC+8)' : 'Set current time + 2 hours (UTC+8)'}
-                  >
-                    <span className="text-xs font-semibold">+2h</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      // 創建一個新的日期對象
-                      const now = new Date();
-                      // 調整為UTC+8時區，加上8小時
-                      const utc8Now = new Date(now.getTime() + 8 * 60 * 60 * 1000);
-                      const startTimeValue = utc8Now.toISOString().slice(0, 16);
-                      // 加4小時
-                      const endTimeValue = new Date(utc8Now.getTime() + 4 * 60 * 60 * 1000).toISOString().slice(0, 16);
-                      
-                      setStartTime(startTimeValue);
-                      setEndTime(endTimeValue);
-                    }}
-                    className="flex items-center justify-center bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-full w-8 h-8"
-                    title={language === 'zh' ? '設置為當前時間 + 4小時 (UTC+8)' : 'Set current time + 4 hours (UTC+8)'}
-                  >
-                    <span className="text-xs font-semibold">+4h</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      // 創建一個新的日期對象
-                      const now = new Date();
-                      // 調整為UTC+8時區，加上8小時
-                      const utc8Now = new Date(now.getTime() + 8 * 60 * 60 * 1000);
-                      const startTimeValue = utc8Now.toISOString().slice(0, 16);
-                      // 加8小時
-                      const endTimeValue = new Date(utc8Now.getTime() + 8 * 60 * 60 * 1000).toISOString().slice(0, 16);
-                      
-                      setStartTime(startTimeValue);
-                      setEndTime(endTimeValue);
-                    }}
-                    className="flex items-center justify-center bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-full w-8 h-8"
-                    title={language === 'zh' ? '設置為當前時間 + 8小時 (UTC+8)' : 'Set current time + 8 hours (UTC+8)'}
-                  >
-                    <span className="text-xs font-semibold">+8h</span>
-                  </button>
-                </div>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm text-gray-600 mb-1">
-                    {t('startTime')}
-                    {!startTime && (
-                      <span className="text-red-500 ml-1">*</span>
-                    )}
-                  </label>
-                  <input
-                    type="datetime-local"
-                    className={`w-full border rounded px-3 py-3 text-base focus:ring-1 ${
-                      startTime 
-                        ? 'border-green-500 focus:border-green-500 focus:ring-green-500' 
-                        : 'border-gray-300 focus:border-blue-500 focus:ring-blue-500'
-                    }`}
-                    value={startTime}
-                    onChange={(e) => setStartTime(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm text-gray-600 mb-1">
-                    {t('endTime')}
-                    {!endTime && (
-                      <span className="text-red-500 ml-1">*</span>
-                    )}
-                  </label>
-                  <input
-                    type="datetime-local"
-                    className={`w-full border rounded px-3 py-3 text-base focus:ring-1 ${
-                      endTime 
-                        ? 'border-green-500 focus:border-green-500 focus:ring-green-500' 
-                        : 'border-gray-300 focus:border-blue-500 focus:ring-blue-500'
-                    }`}
-                    value={endTime}
-                    onChange={(e) => setEndTime(e.target.value)}
-                  />
-                </div>
-              </div>
-              
-              {/* 負責人員欄位 - 更新為與PM工單相同的三個角色 */}
-              <div>
-                <label className="block text-sm text-gray-600 mb-1">
-                  {language === 'zh' ? '負責人' : 'Owner'}
-                  {!selectedStaff.owner && (
-                    <span className="text-red-500 ml-1">*</span>
-                  )}
-                </label>
-                <select
-                  className={`w-full border rounded px-3 py-2 focus:outline-none focus:ring-1 ${
-                    selectedStaff.owner 
-                      ? 'border-green-500 focus:border-green-500 focus:ring-green-500' 
-                      : 'border-gray-300 focus:border-blue-500 focus:ring-blue-500'
-                  }`}
-                  value={selectedStaff.owner || ''}
-                  onChange={(e) => setSelectedStaff(prev => ({ ...prev, owner: e.target.value }))}
-                >
-                  <option value="">{language === 'zh' ? '選擇負責人' : 'Select owner'}</option>
-                  {managerList.map((manager: any) => (
-                    <option key={`owner-${manager.id}`} value={manager.id}>
-                      {manager.id} - {manager.name} {manager.role ? `(${manager.role})` : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              
-              <div>
-                <label className="block text-sm text-gray-600 mb-1">
-                  {language === 'zh' ? '主導人員' : 'Lead'}
-                  {!selectedStaff.lead && (
-                    <span className="text-red-500 ml-1">*</span>
-                  )}
-                </label>
-                <select
-                  className={`w-full border rounded px-3 py-2 focus:outline-none focus:ring-1 ${
-                    selectedStaff.lead 
-                      ? 'border-green-500 focus:border-green-500 focus:ring-green-500' 
-                      : 'border-gray-300 focus:border-blue-500 focus:ring-blue-500'
-                  }`}
-                  value={selectedStaff.lead || ''}
-                  onChange={(e) => setSelectedStaff(prev => ({ ...prev, lead: e.target.value }))}
-                >
-                  <option value="">{language === 'zh' ? '選擇主導人員' : 'Select lead'}</option>
-                  {managerList.map((manager: any) => (
-                    <option key={`lead-${manager.id}`} value={manager.id}>
-                      {manager.id} - {manager.name} {manager.role ? `(${manager.role})` : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              
-              <div>
-                <label className="block text-sm text-gray-600 mb-1">
-                  {language === 'zh' ? '監督人員' : 'Supervisor'}
-                  {!selectedStaff.supervisor && (
-                    <span className="text-red-500 ml-1">*</span>
-                  )}
-                </label>
-                <select
-                  className={`w-full border rounded px-3 py-2 focus:outline-none focus:ring-1 ${
-                    selectedStaff.supervisor 
-                      ? 'border-green-500 focus:border-green-500 focus:ring-green-500' 
-                      : 'border-gray-300 focus:border-blue-500 focus:ring-blue-500'
-                  }`}
-                  value={selectedStaff.supervisor || ''}
-                  onChange={(e) => setSelectedStaff(prev => ({ ...prev, supervisor: e.target.value }))}
-                >
-                  <option value="">{language === 'zh' ? '選擇監督人員' : 'Select supervisor'}</option>
-                  {managerList.map((manager: any) => (
-                    <option key={`supervisor-${manager.id}`} value={manager.id}>
-                      {manager.id} - {manager.name} {manager.role ? `(${manager.role})` : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
+        {/* 載入中 */}
+        {isLoading ? (
+          <div className="flex items-center justify-center h-full">
+            <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-blue-500"></div>
           </div>
-        )}
+        ) : workOrder ? (
+          <>
+            {/* 頁籤內容 */}
+            <div className="p-4">
+              {/* Info頁籤 */}
+              {activeTab === 'info' && (
+                <div className="space-y-6">
+                  {/* 基本信息卡片 */}
+                  <div className="bg-white rounded-lg shadow">
+                    <div className="divide-y">
+                      {/* 工單號碼 */}
+                      <div className="flex px-4 py-3">
+                        <div className="w-28 text-gray-600">{t('workOrderId')}</div>
+                        <div className="flex-1">{workOrder.id}</div>
+                      </div>
+                      
+                      {/* 故障設備 - 可編輯 */}
+                      <div className="flex px-4 py-3">
+                        <div className="w-28 text-gray-600">{t('assets')}</div>
+                        <div className="flex-1">
+                          {editing.assets ? (
+                            <div className="flex flex-col">
+                              <textarea
+                                className="w-full border rounded px-3 py-2 mb-2"
+                                value={editableFields.assets}
+                                onChange={(e) => setEditableFields({...editableFields, assets: e.target.value})}
+                                rows={3}
+                                disabled={!isEditable}
+                              ></textarea>
+                              <div className="flex justify-end space-x-2">
+                                <button 
+                                  onClick={() => cancelEditing('assets')} 
+                                  className="border px-3 py-1 rounded hover:bg-gray-50"
+                                >
+                                  {t('cancel')}
+                                </button>
+                                <button 
+                                  onClick={() => saveField('assets')} 
+                                  className="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700"
+                                >
+                                  {t('save')}
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div 
+                              className="py-1 px-2 -mx-2 rounded hover:bg-blue-50 cursor-pointer flex"
+                              onClick={() => isEditable && startEditing('assets')}
+                            >
+                              <div className="flex-1">
+                                {editableFields.assets}
+                              </div>
+                              {isEditable && (
+                                <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                </svg>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      
+                      {/* 移除工單描述部分 */}
 
-        {/* ActualCheck 元件 */}
-        {activeTab === 'actual' && (
-          <CMActual 
-            cmId={params.id} 
-            onCompleteStatusChange={handleActualCheckCompleteChange}
-            onFormChange={handleActualFormChange}
-            onFormDataChange={handleActualFormDataChange}
-            initialData={workOrder ? {
-              failureDetails: workOrder.failureDetails,
-              repairMethod: workOrder.repairMethod,
-              isCompleted: workOrder.isCompleted,
-              downtimeHours: workOrder.downtimeHours,
-              downtimeMinutes: workOrder.downtimeMinutes
-            } : undefined}
-          />
-        )}
+                      <div className="flex px-4 py-3">
+                        <div className="w-28 text-gray-600">{t('location')}</div>
+                        <div className="flex-1">{workOrder.location}</div>
+                      </div>
 
-        {/* Resource 頁面 */}
-        {activeTab === 'report' && (
-          <WorkReport 
-            workOrderId={params.id}
-            onCompleteStatusChange={handleResourceCompleteChange}
-            onFormChange={handleReportFormChange}
-            resources={workOrder?.resources}
-            initialReportItems={workOrder?.reportItems}
-          />
+                      <div className="flex px-4 py-3">
+                        <div className="w-28 text-gray-600">{t('equipmentType')}</div>
+                        <div className="flex-1">{workOrder.equipmentType}</div>
+                      </div>
+
+                      {/* 添加指定人員欄位 */}
+                      <div className="flex px-4 py-3">
+                        <div className="w-28 text-gray-600">{t('systemEngineer')}</div>
+                        <div className="flex-1">{workOrder.systemEngineer || '-'}</div>
+                      </div>
+
+                      {/* 可編輯的異常類型欄位 */}
+                      <div className="flex px-4 py-3">
+                        <div className="w-28 text-gray-600">{t('abnormalType')}</div>
+                        <div className="flex-1">
+                          {editing.abnormalType ? (
+                            <div className="flex flex-col">
+                              <select
+                                className="w-full border rounded px-3 py-2 mb-2"
+                                value={editableFields.abnormalType}
+                                onChange={(e) => setEditableFields({...editableFields, abnormalType: e.target.value})}
+                                disabled={!isEditable}
+                              >
+                                <option value="">{t('pleaseSelect')}</option>
+                                <option value="機械">{t('mechanical')}</option>
+                                <option value="電氣">{t('electrical')}</option>
+                                <option value="液壓">{t('hydraulic')}</option>
+                                <option value="氣動">{t('pneumatic')}</option>
+                                <option value="其他">{t('other')}</option>
+                              </select>
+                              <div className="flex justify-end space-x-2">
+                                <button 
+                                  onClick={() => cancelEditing('abnormalType')} 
+                                  className="border px-3 py-1 rounded hover:bg-gray-50"
+                                >
+                                  {t('cancel')}
+                                </button>
+                                <button 
+                                  onClick={() => saveField('abnormalType')} 
+                                  className="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700"
+                                >
+                                  {t('save')}
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div 
+                              className="py-1 px-2 -mx-2 rounded hover:bg-blue-50 cursor-pointer flex"
+                              onClick={() => isEditable && startEditing('abnormalType')}
+                            >
+                              <div className="flex-1">
+                                {editableFields.abnormalType || t('pleaseSelect')}
+                              </div>
+                              {isEditable && (
+                                <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                </svg>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 人員信息卡片 */}
+                  <div className="bg-white rounded-lg shadow">
+                    <div className="p-4">
+                      <div className="grid grid-cols-1 gap-4">
+                        <div>
+                          <label className="block text-sm text-gray-600 mb-1">
+                            {t('owner')}
+                            {!selectedStaff.owner && (
+                              <span className="text-red-500 ml-1">*</span>
+                            )}
+                          </label>
+                          <select
+                            className={`w-full border rounded px-3 py-3 text-base focus:ring-1 ${
+                              selectedStaff.owner 
+                                ? 'border-green-500 focus:border-green-500 focus:ring-green-500' 
+                                : 'border-gray-300 focus:border-blue-500 focus:ring-blue-500'
+                            }`}
+                            value={selectedStaff.owner}
+                            onChange={(e) => {
+                              setSelectedStaff({...selectedStaff, owner: e.target.value});
+                              setIsDirty(true);
+                            }}
+                            disabled={!isEditable}
+                          >
+                            <option value="">{t('pleaseSelect')}</option>
+                            {managerList.map((manager: any) => (
+                              <option key={manager.id} value={manager.id}>
+                                {manager.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-sm text-gray-600 mb-1">
+                            {t('lead')}
+                            {!selectedStaff.lead && (
+                              <span className="text-red-500 ml-1">*</span>
+                            )}
+                          </label>
+                          <select
+                            className={`w-full border rounded px-3 py-3 text-base focus:ring-1 ${
+                              selectedStaff.lead 
+                                ? 'border-green-500 focus:border-green-500 focus:ring-green-500' 
+                                : 'border-gray-300 focus:border-blue-500 focus:ring-blue-500'
+                            }`}
+                            value={selectedStaff.lead}
+                            onChange={(e) => {
+                              setSelectedStaff({...selectedStaff, lead: e.target.value});
+                              setIsDirty(true);
+                            }}
+                            disabled={!isEditable}
+                          >
+                            <option value="">{t('pleaseSelect')}</option>
+                            {managerList.map((manager: any) => (
+                              <option key={manager.id} value={manager.id}>
+                                {manager.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-sm text-gray-600 mb-1">
+                            {t('supervisor')}
+                            {!selectedStaff.supervisor && (
+                              <span className="text-red-500 ml-1">*</span>
+                            )}
+                          </label>
+                          <select
+                            className={`w-full border rounded px-3 py-3 text-base focus:ring-1 ${
+                              selectedStaff.supervisor 
+                                ? 'border-green-500 focus:border-green-500 focus:ring-green-500' 
+                                : 'border-gray-300 focus:border-blue-500 focus:ring-blue-500'
+                            }`}
+                            value={selectedStaff.supervisor}
+                            onChange={(e) => {
+                              setSelectedStaff({...selectedStaff, supervisor: e.target.value});
+                              setIsDirty(true);
+                            }}
+                            disabled={!isEditable}
+                          >
+                            <option value="">{t('pleaseSelect')}</option>
+                            {managerList.map((manager: any) => (
+                              <option key={manager.id} value={manager.id}>
+                                {manager.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 維護時間卡片 */}
+                  <div className="bg-white rounded-lg shadow">
+                    <div className="p-4">
+                      {/* 添加時間快速設置按鈕 */}
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="text-sm text-gray-600 font-medium">{language === 'zh' ? '快速設置時間:' : 'Quick Time Set:'}</div>
+                        <div className="flex space-x-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              // 創建一個新的日期對象
+                              const now = new Date();
+                              // 調整為UTC+8時區，加上8小時
+                              const utc8Now = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+                              const startDateTime = utc8Now.toISOString().slice(0, 16);
+                              // 加1小時
+                              const endDateTime = new Date(utc8Now.getTime() + 1 * 60 * 60 * 1000).toISOString().slice(0, 16);
+                              
+                              setStartTime(startDateTime);
+                              setEndTime(endDateTime);
+                              setIsDirty(true);
+                            }}
+                            className="flex items-center justify-center bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-full w-8 h-8"
+                            title="Set current time + 1 hour (UTC+8)"
+                            disabled={!isEditable}
+                          >
+                            <span className="text-xs font-semibold">+1h</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              // 創建一個新的日期對象
+                              const now = new Date();
+                              // 調整為UTC+8時區，加上8小時
+                              const utc8Now = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+                              const startDateTime = utc8Now.toISOString().slice(0, 16);
+                              // 加2小時
+                              const endDateTime = new Date(utc8Now.getTime() + 2 * 60 * 60 * 1000).toISOString().slice(0, 16);
+                              
+                              setStartTime(startDateTime);
+                              setEndTime(endDateTime);
+                              setIsDirty(true);
+                            }}
+                            className="flex items-center justify-center bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-full w-8 h-8"
+                            title="Set current time + 2 hours (UTC+8)"
+                            disabled={!isEditable}
+                          >
+                            <span className="text-xs font-semibold">+2h</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              // 創建一個新的日期對象
+                              const now = new Date();
+                              // 調整為UTC+8時區，加上8小時
+                              const utc8Now = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+                              const startDateTime = utc8Now.toISOString().slice(0, 16);
+                              // 加4小時
+                              const endDateTime = new Date(utc8Now.getTime() + 4 * 60 * 60 * 1000).toISOString().slice(0, 16);
+                              
+                              setStartTime(startDateTime);
+                              setEndTime(endDateTime);
+                              setIsDirty(true);
+                            }}
+                            className="flex items-center justify-center bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-full w-8 h-8"
+                            title="Set current time + 4 hours (UTC+8)"
+                            disabled={!isEditable}
+                          >
+                            <span className="text-xs font-semibold">+4h</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              // 創建一個新的日期對象
+                              const now = new Date();
+                              // 調整為UTC+8時區，加上8小時
+                              const utc8Now = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+                              const startDateTime = utc8Now.toISOString().slice(0, 16);
+                              // 加8小時
+                              const endDateTime = new Date(utc8Now.getTime() + 8 * 60 * 60 * 1000).toISOString().slice(0, 16);
+                              
+                              setStartTime(startDateTime);
+                              setEndTime(endDateTime);
+                              setIsDirty(true);
+                            }}
+                            className="flex items-center justify-center bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-full w-8 h-8"
+                            title="Set current time + 8 hours (UTC+8)"
+                            disabled={!isEditable}
+                          >
+                            <span className="text-xs font-semibold">+8h</span>
+                          </button>
+                        </div>
+                      </div>
+                      
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm text-gray-600 mb-1">
+                            {t('startTime')}
+                            {!startTime && (
+                              <span className="text-red-500 ml-1">*</span>
+                            )}
+                          </label>
+                          <input
+                            type="datetime-local"
+                            className={`w-full border rounded px-3 py-3 text-base focus:ring-1 ${
+                              startTime 
+                                ? 'border-green-500 focus:border-green-500 focus:ring-green-500' 
+                                : 'border-gray-300 focus:border-blue-500 focus:ring-blue-500'
+                            }`}
+                            value={startTime}
+                            onChange={(e) => {
+                              setStartTime(e.target.value);
+                              setIsDirty(true);
+                            }}
+                            disabled={!isEditable}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm text-gray-600 mb-1">
+                            {t('endTime')}
+                            {!endTime && (
+                              <span className="text-red-500 ml-1">*</span>
+                            )}
+                          </label>
+                          <input
+                            type="datetime-local"
+                            className={`w-full border rounded px-3 py-3 text-base focus:ring-1 ${
+                              endTime 
+                                ? 'border-green-500 focus:border-green-500 focus:ring-green-500' 
+                                : 'border-gray-300 focus:border-blue-500 focus:ring-blue-500'
+                            }`}
+                            value={endTime}
+                            onChange={(e) => {
+                              setEndTime(e.target.value);
+                              setIsDirty(true);
+                            }}
+                            disabled={!isEditable}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Actual頁籤 */}
+              {activeTab === 'actual' && (
+                <CMActual 
+                  cmId={workOrder.id}
+                  onCompleteStatusChange={handleActualCheckCompleteChange}
+                  onFormChange={handleActualFormChange}
+                  onFormDataChange={handleActualFormDataChange}
+                  initialData={{
+                    failureDetails: workOrder.failureDetails,
+                    repairMethod: workOrder.repairMethod,
+                    isCompleted: workOrder.isCompleted,
+                    downtimeHours: workOrder.downtimeHours,
+                    downtimeMinutes: workOrder.downtimeMinutes
+                  }}
+                  equipmentName={workOrder.equipmentName}
+                  abnormalType={workOrder.abnormalType}
+                />
+              )}
+
+              {/* Resource頁籤 */}
+              {activeTab === 'report' && (
+                <WorkReport
+                  workOrderId={workOrder.id}
+                  resources={resourcesData}
+                  onCompleteStatusChange={handleResourceCompleteChange}
+                  onFormChange={handleReportFormChange}
+                />
+              )}
+            </div>
+          </>
+        ) : (
+          <div className="flex items-center justify-center h-full">
+            <div className="text-gray-500">{t('noData')}</div>
+          </div>
         )}
       </div>
 
       {/* 底部空白區，防止內容被固定的底部標籤頁遮擋 */}
       <div className="h-24"></div>
 
-      {/* 底部固定按鈕 */}
+      {/* 底部固定按鈕 - 與PM工單樣式保持一致 */}
       <div className="flex-none bg-blue-600 text-white fixed bottom-0 left-0 right-0">
         <div className="grid grid-cols-3 divide-x divide-white/30">
           <button 
@@ -1487,7 +1589,7 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
                   stroke="currentColor" 
                   viewBox="0 0 24 24"
                 >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
                 </svg>
                 {actualCheckComplete && (
                   <div className="absolute -top-1 -right-1 bg-green-500 rounded-full w-3 h-3 flex items-center justify-center">
@@ -1513,7 +1615,7 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
                   stroke="currentColor" 
                   viewBox="0 0 24 24"
                 >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
                 {resourceComplete && (
                   <div className="absolute -top-1 -right-1 bg-green-500 rounded-full w-3 h-3 flex items-center justify-center">
@@ -1529,19 +1631,23 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
         </div>
       </div>
 
-      {/* Submit Modal */}
-      <SubmitModal
-        isOpen={showSubmitModal}
-        onClose={() => setShowSubmitModal(false)}
-        onSubmit={handleSubmitWorkOrder}
-      />
-
-      {/* Cancel Modal */}
-      <CancelModal
-        isOpen={showCancelModal}
-        onClose={() => setShowCancelModal(false)}
-        onCancel={handleCancelWorkOrder}
-      />
+      {/* 取消工單確認對話框 */}
+      {showCancelModal && (
+        <CancelModal
+          isOpen={showCancelModal}
+          onClose={() => setShowCancelModal(false)}
+          onCancel={handleCancelWorkOrder}
+        />
+      )}
+      
+      {/* 提交工單確認對話框 */}
+      {showSubmitModal && (
+        <SubmitModal
+          isOpen={showSubmitModal}
+          onClose={() => setShowSubmitModal(false)}
+          onSubmit={handleSubmitWorkOrder}
+        />
+      )}
     </div>
   );
 } 

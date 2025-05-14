@@ -25,12 +25,7 @@ interface LaborHour {
 
 interface WorkReportProps {
   workOrderId: string;
-  onCompleteStatusChange?: (isComplete: boolean, resources?: {
-    labor: LaborResource[];
-    materials: MaterialResource[];
-    tools: ToolResource[];
-    hasNewResources?: boolean;
-  }) => void;
+  onCompleteStatusChange?: (isComplete: boolean, resources?: any) => void;
   onFormChange?: (isDirty: boolean) => void;
   initialReportItems?: ReportItem[];
   resources?: {
@@ -38,9 +33,11 @@ interface WorkReportProps {
     materials: MaterialResource[];
     tools: ToolResource[];
   };
+  isEditable?: boolean;
+  nonEditableReason?: string;
 }
 
-const WorkReport: React.FC<WorkReportProps> = ({ workOrderId, onCompleteStatusChange, onFormChange, initialReportItems, resources }) => {
+const WorkReport: React.FC<WorkReportProps> = ({ workOrderId, onCompleteStatusChange, onFormChange, initialReportItems, resources, isEditable = true, nonEditableReason = '' }) => {
   const { language } = useLanguage();
   const [materials, setMaterials] = useState<Material[]>([]);
   const [tools, setTools] = useState<Tool[]>([]);
@@ -413,6 +410,11 @@ const WorkReport: React.FC<WorkReportProps> = ({ workOrderId, onCompleteStatusCh
   
   // 處理報告項目狀態變更
   const handleReportItemStatusChange = (id: string, completed: boolean) => {
+    if (!isEditable) {
+      alert(nonEditableReason);
+      return;
+    }
+    
     setReportItems(items => 
       items.map(item =>
         item.id === id ? { ...item, completed } : item
@@ -421,6 +423,11 @@ const WorkReport: React.FC<WorkReportProps> = ({ workOrderId, onCompleteStatusCh
   };
 
   const handleAddMaterial = () => {
+    if (!isEditable) {
+      alert(nonEditableReason);
+      return;
+    }
+    
     if (newMaterial.code.trim() && (newMaterial.name.trim() || customMaterial) && newMaterial.quantity > 0) {
       const id = `material_${Date.now()}`;
       setMaterials([...materials, { id, ...newMaterial, quantity: Math.abs(Math.floor(newMaterial.quantity)) }]);
@@ -431,6 +438,11 @@ const WorkReport: React.FC<WorkReportProps> = ({ workOrderId, onCompleteStatusCh
   };
 
   const handleAddTool = () => {
+    if (!isEditable) {
+      alert(nonEditableReason);
+      return;
+    }
+    
     if (newTool.code.trim() && (newTool.name.trim() || customTool) && newTool.quantity > 0) {
       const id = `tool_${Date.now()}`;
       setTools([...tools, { id, ...newTool, quantity: Math.abs(Math.floor(newTool.quantity)) }]);
@@ -441,6 +453,11 @@ const WorkReport: React.FC<WorkReportProps> = ({ workOrderId, onCompleteStatusCh
   };
 
   const handleAddLabor = () => {
+    if (!isEditable) {
+      alert(nonEditableReason);
+      return;
+    }
+    
     if (newLabor.staffId.trim() && (newLabor.staffName.trim() || customLabor) && newLabor.hours > 0) {
       const id = `labor_${Date.now()}`;
       setLaborHours([...laborHours, { id, ...newLabor }]);
@@ -451,6 +468,11 @@ const WorkReport: React.FC<WorkReportProps> = ({ workOrderId, onCompleteStatusCh
   };
 
   const handleRemoveLabor = (id: string) => {
+    if (!isEditable) {
+      alert(nonEditableReason);
+      return;
+    }
+    
     // 從現有勞工列表中找到要刪除的勞工資料
     const laborToRemove = laborHours.find(item => item.id === id);
     
@@ -476,6 +498,11 @@ const WorkReport: React.FC<WorkReportProps> = ({ workOrderId, onCompleteStatusCh
   };
 
   const handleRemoveMaterial = (id: string) => {
+    if (!isEditable) {
+      alert(nonEditableReason);
+      return;
+    }
+    
     // 從現有材料列表中找到要刪除的材料資料
     const materialToRemove = materials.find(item => item.id === id);
     
@@ -501,6 +528,11 @@ const WorkReport: React.FC<WorkReportProps> = ({ workOrderId, onCompleteStatusCh
   };
 
   const handleRemoveTool = (id: string) => {
+    if (!isEditable) {
+      alert(nonEditableReason);
+      return;
+    }
+    
     // 從現有工具列表中找到要刪除的工具資料
     const toolToRemove = tools.find(item => item.id === id);
     
@@ -777,12 +809,14 @@ const WorkReport: React.FC<WorkReportProps> = ({ workOrderId, onCompleteStatusCh
         <div className="bg-white rounded-lg shadow-md mb-4">
           <div className="p-4 border-b flex justify-between items-center">
             <h2 className="text-lg font-medium">{t('laborHours')}</h2>
-            <button
-              onClick={() => setShowAddLabor(!showAddLabor)}
-              className="bg-blue-500 text-white rounded-md px-3 py-1 text-sm font-medium hover:bg-blue-600 transition-colors"
-            >
-              {t('add')}
-            </button>
+            {isEditable && (
+              <button
+                onClick={() => setShowAddLabor(!showAddLabor)}
+                className="bg-blue-500 text-white rounded-md px-3 py-1 text-sm font-medium hover:bg-blue-600 transition-colors"
+              >
+                {t('add')}
+              </button>
+            )}
           </div>
           <div className="p-4">
             {showAddLabor && (
@@ -898,12 +932,14 @@ const WorkReport: React.FC<WorkReportProps> = ({ workOrderId, onCompleteStatusCh
         <div className="bg-white rounded-lg shadow-md mb-4">
           <div className="p-4 border-b flex justify-between items-center">
             <h2 className="text-lg font-medium">{t('materials')}</h2>
-            <button
-              onClick={() => setShowAddMaterial(!showAddMaterial)}
-              className="bg-blue-500 text-white rounded-md px-3 py-1 text-sm font-medium hover:bg-blue-600 transition-colors"
-            >
-              {t('add')}
-            </button>
+            {isEditable && (
+              <button
+                onClick={() => setShowAddMaterial(!showAddMaterial)}
+                className="bg-blue-500 text-white rounded-md px-3 py-1 text-sm font-medium hover:bg-blue-600 transition-colors"
+              >
+                {t('add')}
+              </button>
+            )}
           </div>
           <div className="p-4">
             {showAddMaterial && (
@@ -1018,12 +1054,14 @@ const WorkReport: React.FC<WorkReportProps> = ({ workOrderId, onCompleteStatusCh
         <div className="bg-white rounded-lg shadow-md mb-4">
           <div className="p-4 border-b flex justify-between items-center">
             <h2 className="text-lg font-medium">{t('tools')}</h2>
-            <button
-              onClick={() => setShowAddTool(!showAddTool)}
-              className="bg-blue-500 text-white rounded-md px-3 py-1 text-sm font-medium hover:bg-blue-600 transition-colors"
-            >
-              {t('add')}
-            </button>
+            {isEditable && (
+              <button
+                onClick={() => setShowAddTool(!showAddTool)}
+                className="bg-blue-500 text-white rounded-md px-3 py-1 text-sm font-medium hover:bg-blue-600 transition-colors"
+              >
+                {t('add')}
+              </button>
+            )}
           </div>
           <div className="p-4">
             {showAddTool && (

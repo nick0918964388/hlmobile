@@ -7,6 +7,7 @@ import {
   extractInfoFromFileName,
   generateAttachmentFileName
 } from '@/utils/fileUtils';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 interface Media {
   id: string;
@@ -43,6 +44,8 @@ interface ActualCheckProps {
   assets?: string;
   route?: string;
   attachments?: WorkOrderAttachment[];
+  isEditable?: boolean;
+  nonEditableReason?: string;
 }
 
 // 防抖函數
@@ -70,7 +73,9 @@ const ActualCheck: React.FC<ActualCheckProps> = ({
   initialCheckItems,
   assets,
   route,
-  attachments
+  attachments,
+  isEditable = true,
+  nonEditableReason = ''
 }) => {
   const mapApiCheckItemsToInternal = (apiItems?: ApiCheckItem[]): CheckItem[] => {
     if (!apiItems || apiItems.length === 0) {
@@ -295,9 +300,13 @@ const ActualCheck: React.FC<ActualCheckProps> = ({
   };
 
   const triggerFileInput = (itemId: string, assetNum: string, type: 'image' | 'video') => {
-    const compositeId = `${itemId}_${assetNum || 'Default'}`;
-    setActiveItemId(compositeId);
+    if (!isEditable) {
+      alert(nonEditableReason);
+      return;
+    }
+    
     setMediaType(type);
+    setActiveItemId(`${assetNum}_${itemId}`);
     
     if (type === 'image') {
       fileInputRef.current?.click();
@@ -307,6 +316,11 @@ const ActualCheck: React.FC<ActualCheckProps> = ({
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!isEditable) {
+      alert(nonEditableReason);
+      return;
+    }
+    
     if (!activeItemId || !e.target.files || e.target.files.length === 0) return;
     
     const file = e.target.files[0];
@@ -626,6 +640,63 @@ const ActualCheck: React.FC<ActualCheckProps> = ({
     }
   }, [attachments, checkItems.length]);
 
+  // 處理檢查項目結果變更
+  const handleResultChange = (compositeId: string, result: string) => {
+    if (!isEditable) {
+      alert(nonEditableReason);
+      return;
+    }
+    
+    const updatedItems = checkItems.map(item => {
+      if (item.compositeId === compositeId) {
+        return { ...item, status: result as ('v' | 'x' | 'na' | '') };
+      }
+      return item;
+    });
+    
+    setCheckItems(updatedItems);
+    updateAssetGroupWithItems(updatedItems);
+  };
+
+  // 處理檢查項目備註變更
+  const handleRemarkChange = (compositeId: string, remark: string) => {
+    if (!isEditable) {
+      alert(nonEditableReason);
+      return;
+    }
+    
+    const updatedItems = checkItems.map(item => {
+      if (item.compositeId === compositeId) {
+        return { ...item, note: remark };
+      }
+      return item;
+    });
+    
+    setCheckItems(updatedItems);
+    updateAssetGroupWithItems(updatedItems);
+  };
+
+  // 刪除媒體項目
+  const handleDeleteMedia = (itemCompositeId: string, mediaId: string) => {
+    if (!isEditable) {
+      alert(nonEditableReason);
+      return;
+    }
+    
+    const updatedItems = checkItems.map(item => {
+      if (item.compositeId === itemCompositeId) {
+        return {
+          ...item,
+          media: item.media.filter(media => media.id !== mediaId)
+        };
+      }
+      return item;
+    });
+    
+    setCheckItems(updatedItems);
+    updateAssetGroupWithItems(updatedItems);
+  };
+
   return (
     <div className="flex-1 overflow-auto bg-gray-50">
       <input
@@ -779,7 +850,10 @@ const ActualCheck: React.FC<ActualCheckProps> = ({
                             </div>
                             <div className="flex space-x-2">
                               <button
-                                onClick={() => handleStatusChange(item.id, item.assetNum || 'Default', 'v')}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleResultChange(item.compositeId || '', 'v');
+                                }}
                                 className={`rounded-md px-2 py-1 text-xs font-medium ${
                                   item.status === 'v'
                                     ? 'bg-green-500 text-white'
@@ -789,7 +863,10 @@ const ActualCheck: React.FC<ActualCheckProps> = ({
                                 V
                               </button>
                               <button
-                                onClick={() => handleStatusChange(item.id, item.assetNum || 'Default', 'x')}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleResultChange(item.compositeId || '', 'x');
+                                }}
                                 className={`rounded-md px-2 py-1 text-xs font-medium ${
                                   item.status === 'x'
                                     ? 'bg-red-500 text-white'
@@ -799,7 +876,10 @@ const ActualCheck: React.FC<ActualCheckProps> = ({
                                 X
                               </button>
                               <button
-                                onClick={() => handleStatusChange(item.id, item.assetNum || 'Default', 'na')}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleResultChange(item.compositeId || '', 'na');
+                                }}
                                 className={`rounded-md px-2 py-1 text-xs font-medium ${
                                   item.status === 'na'
                                     ? 'bg-gray-500 text-white'
@@ -821,7 +901,7 @@ const ActualCheck: React.FC<ActualCheckProps> = ({
                                   key={item.id + '-notes'}
                                   rows={2}
                                   defaultValue={item.note || ''}
-                                  onChange={(e) => handleNoteChange(item.id, item.assetNum || 'Default', e.target.value)}
+                                  onChange={(e) => handleRemarkChange(item.compositeId || '', e.target.value)}
                                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
                                   placeholder="Add any relevant notes or observations"
                                 ></textarea>
@@ -833,8 +913,12 @@ const ActualCheck: React.FC<ActualCheckProps> = ({
                                 </label>
                                 <div className="flex space-x-2">
                                   <button
-                                    onClick={() => triggerFileInput(item.id, item.assetNum || 'Default', 'image')}
-                                    className="px-2 py-1 bg-blue-50 text-blue-600 rounded-md text-xs hover:bg-blue-100 flex items-center"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      triggerFileInput(item.id, item.assetNum || 'Default', 'image');
+                                    }}
+                                    className={`px-2 py-1 bg-blue-50 text-blue-600 rounded-md text-xs hover:bg-blue-100 flex items-center ${!isEditable ? 'border-gray-300 text-gray-400 cursor-not-allowed' : ''}`}
+                                    disabled={!isEditable}
                                   >
                                     <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -842,8 +926,12 @@ const ActualCheck: React.FC<ActualCheckProps> = ({
                                     Upload Image
                                   </button>
                                   <button
-                                    onClick={() => openCamera(item.id, item.assetNum || 'Default', 'image')}
-                                    className="px-2 py-1 bg-blue-50 text-blue-600 rounded-md text-xs hover:bg-blue-100 flex items-center"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      openCamera(item.id, item.assetNum || 'Default', 'image');
+                                    }}
+                                    className={`px-2 py-1 bg-blue-50 text-blue-600 rounded-md text-xs hover:bg-blue-100 flex items-center ${!isEditable ? 'border-gray-300 text-gray-400 cursor-not-allowed' : ''}`}
+                                    disabled={!isEditable}
                                   >
                                     <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
@@ -852,8 +940,12 @@ const ActualCheck: React.FC<ActualCheckProps> = ({
                                     Take Photo
                                   </button>
                                   <button
-                                    onClick={() => triggerFileInput(item.id, item.assetNum || 'Default', 'video')}
-                                    className="px-2 py-1 bg-blue-50 text-blue-600 rounded-md text-xs hover:bg-blue-100 flex items-center"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      triggerFileInput(item.id, item.assetNum || 'Default', 'video');
+                                    }}
+                                    className={`px-2 py-1 bg-blue-50 text-blue-600 rounded-md text-xs hover:bg-blue-100 flex items-center ${!isEditable ? 'border-gray-300 text-gray-400 cursor-not-allowed' : ''}`}
+                                    disabled={!isEditable}
                                   >
                                     <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
@@ -869,7 +961,10 @@ const ActualCheck: React.FC<ActualCheckProps> = ({
                                     <div key={media.id} className="relative group">
                                       <div
                                         className="h-20 rounded-md overflow-hidden bg-gray-100 cursor-pointer"
-                                        onClick={() => setExpandedMedia(media)}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setExpandedMedia(media);
+                                        }}
                                       >
                                         {media.type === 'image' ? (
                                           <img
@@ -886,12 +981,17 @@ const ActualCheck: React.FC<ActualCheckProps> = ({
                                           </div>
                                         )}
                                       </div>
-                                      <button
-                                        onClick={() => removeMedia(item.id, item.assetNum || 'Default', media.id)}
-                                        className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity"
-                                      >
-                                        ✕
-                                      </button>
+                                      {isEditable && (
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleDeleteMedia(item.compositeId || '', media.id);
+                                          }}
+                                          className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+                                        >
+                                          ✕
+                                        </button>
+                                      )}
                                     </div>
                                   ))}
                                 </div>
