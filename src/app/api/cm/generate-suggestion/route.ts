@@ -14,7 +14,7 @@ async function generateFailureDescription(prompt: string): Promise<any> {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'mistral-small:22b-instruct-2409-fp16', // 或者你可以讓模型名稱成為參數
+        model: 'mistral-small:latest', // 或者你可以讓模型名稱成為參數
         prompt: prompt,
         stream: false,
       }),
