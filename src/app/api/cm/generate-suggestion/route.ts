@@ -17,6 +17,7 @@ async function generateFailureDescription(prompt: string): Promise<any> {
         model: 'mistral-small:latest', // 或者你可以讓模型名稱成為參數
         prompt: prompt,
         stream: false,
+        keep_alive: '10m', // 保持模型在記憶體中 10 分鐘，可改為 '-1' 表示永久保持
       }),
     });
 
