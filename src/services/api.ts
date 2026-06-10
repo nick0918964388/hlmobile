@@ -2,6 +2,13 @@
 
 // API服務 - 使用環境變數配置
 
+// 僅在開發環境輸出除錯日誌，避免在正式環境洩漏內部資訊（URL、回應內容、權限等）
+const devLog = (...args: unknown[]): void => {
+  if (process.env.NODE_ENV === 'development') {
+    console.log(...args);
+  }
+};
+
 // 定義PM工單資料介面
 export interface PMWorkOrder {
   id: string;
@@ -293,19 +300,18 @@ const API_CONFIG = {
   maxApiPath: process.env.NEXT_PUBLIC_MAX_API_PATH || '/maximo/oslc/script',
   lean: process.env.NEXT_PUBLIC_API_LEAN !== 'false',
   headers: {
-    'Content-Type': 'application/json',
-    'maxauth': process.env.NEXT_PUBLIC_MAX_AUTH || 'bWF4YWRtaW46emFxMXhzVzI='
+    'Content-Type': 'application/json'
   }
 };
 
 // 建構API URL的輔助函數
 const buildApiUrl = (scriptName: string, params?: Record<string, string | number | boolean>) => {
-  // 如果環境變數有設定使用代理，或是明確要求使用代理，則使用代理API
-  const useProxy = process.env.NEXT_PUBLIC_USE_PROXY === 'true' || true; // 預設總是使用代理
-  
-  // 構建原始API URL
-  const baseUrl = `http://hl.webtw.xyz/maximo/oslc/script/${scriptName}`;
-  
+  // client 一律走 /api/proxy，由 server 端注入憑證
+  const useProxy = true;
+
+  // 構建原始API URL（baseUrl 集中由 API_CONFIG 提供）
+  const baseUrl = `${API_CONFIG.baseUrl}${API_CONFIG.maxApiPath}/${scriptName}`;
+
   // 添加必要的查詢參數
   const queryParams: Record<string, any> = {};
   
@@ -360,7 +366,7 @@ const apiRequest = async <T>(
       options.body = JSON.stringify(body);
     }
     
-    console.log('向API發送請求:', url);
+    devLog('向API發送請求:', url);
     const response = await fetch(url, options);
     
     // 嘗試解析回應內容，無論狀態碼如何
@@ -430,7 +436,7 @@ export const getManagerList = async (): Promise<Manager[]> => {
     ];
   }
   
-  console.log("直接調用MOBILEAPP_GET_MANAGER_LIST...");
+  devLog("直接調用MOBILEAPP_GET_MANAGER_LIST...");
   // 使用實際API
   const url = buildApiUrl('MOBILEAPP_GET_MANAGER_LIST');
   return apiRequest<Manager[]>(url);
@@ -446,7 +452,7 @@ export const dataApi = {
     // 判斷是否使用模擬資料
     if (process.env.NEXT_PUBLIC_USE_MOCK_DATA === 'true') {
       await simulateApiDelay(1000);
-      console.log('模擬更新資料到伺服器:', endpoint, data);
+      devLog('模擬更新資料到伺服器:', endpoint, data);
       return data;
     }
     
@@ -480,7 +486,7 @@ export const pmApi = {
   // 獲取PM工單詳情
   getWorkOrderDetail: async (id: string): Promise<PMWorkOrderDetail> => {
     // 判斷是否使用模擬資料
-    console.log(process.env.NEXT_PUBLIC_USE_MOCK_DATA);
+    devLog(process.env.NEXT_PUBLIC_USE_MOCK_DATA);
     if (process.env.NEXT_PUBLIC_USE_MOCK_DATA === 'true') {
       await simulateApiDelay();
       const response = await fetch('/api/data.json');
@@ -536,18 +542,18 @@ export const pmApi = {
     
     // 使用實際API
     try {
-      console.log(`獲取工單(${id})詳情...`);
+      devLog(`獲取工單(${id})詳情...`);
       const url = buildApiUrl('MOBILEAPP_GET_PM_WORKORDER_DETAIL', { wonum: id });
       const workOrderDetail = await apiRequest<PMWorkOrderDetail>(url);
-      console.log('工單詳情API響應:', workOrderDetail);
+      devLog('工單詳情API響應:', workOrderDetail);
       
       // 如果沒有附件數據，獲取附件數據
       if (!workOrderDetail.attachments) {
         try {
-          console.log('正在獲取工單附件...');
+          devLog('正在獲取工單附件...');
           const attachments = await pmApi.getWorkOrderAttachments(id);
           workOrderDetail.attachments = attachments;
-          console.log(`成功獲取 ${attachments.length} 個附件`);
+          devLog(`成功獲取 ${attachments.length} 個附件`);
         } catch (error) {
           console.error('Failed to fetch attachments for work order:', id, error);
           // 失敗時不阻塞主要數據返回
@@ -675,11 +681,11 @@ export const pmApi = {
   
   // 獲取可擔任owner、lead、supervisor的人員清單
   getManagerList: async (): Promise<Manager[]> => {
-    console.log("pmApi.getManagerList被調用...");
+    devLog("pmApi.getManagerList被調用...");
     
     // 判斷是否使用模擬資料
     if (process.env.NEXT_PUBLIC_USE_MOCK_DATA === 'true') {
-      console.log("使用模擬數據獲取管理人員列表");
+      devLog("使用模擬數據獲取管理人員列表");
       await simulateApiDelay();
       
       // 模擬管理人員資料
@@ -711,13 +717,13 @@ export const pmApi = {
       ];
     }
     
-    console.log("通過API獲取管理人員列表");
+    devLog("通過API獲取管理人員列表");
     // 使用實際API
     const url = buildApiUrl('MOBILEAPP_GET_MANAGER_LIST');
-    console.log("管理人員列表API URL:", url);
+    devLog("管理人員列表API URL:", url);
     try {
       const result = await apiRequest<Manager[]>(url);
-      console.log("管理人員列表API返回結果:", result);
+      devLog("管理人員列表API返回結果:", result);
       return result;
     } catch (error) {
       console.error("管理人員列表API返回錯誤:", error);
@@ -784,16 +790,16 @@ export const pmApi = {
     
     // 使用實際API
     try {
-      console.log(`正在獲取工單(${id})附件...`);
+      devLog(`正在獲取工單(${id})附件...`);
       const url = buildApiUrl('MOBILEAPP_GET_PM_WORKORDER_ATTACHMENTS', { wonum: id });
-      console.log('附件API URL:', url);
+      devLog('附件API URL:', url);
       
       const response = await apiRequest<AttachmentResponse>(url);
-      console.log('附件API響應:', response);
+      devLog('附件API響應:', response);
       
       // 返回附件列表
       const attachments = response.items || [];
-      console.log(`獲取到 ${attachments.length} 個附件`);
+      devLog(`獲取到 ${attachments.length} 個附件`);
       return attachments;
     } catch (error) {
       console.error('獲取附件失敗:', error);
@@ -806,7 +812,7 @@ export const pmApi = {
     // 判斷是否使用模擬資料
     if (process.env.NEXT_PUBLIC_USE_MOCK_DATA === 'true') {
       await simulateApiDelay(500);
-      console.log(`模擬刪除附件 ID: ${attachmentId}`);
+      devLog(`模擬刪除附件 ID: ${attachmentId}`);
       // 模擬成功回應
       return { success: true, message: '附件已成功刪除（模擬）' };
     }
@@ -817,7 +823,7 @@ export const pmApi = {
     try {
       // 注意：將參數名稱從 docinfoid 改為 doclinksid
       const response = await apiRequest<{ success: boolean; message: string }>(url, 'POST', { params: { doclinksid: attachmentId } });
-      console.log(`刪除附件 ${attachmentId} (使用 doclinksid) 的 API 回應:`, response);
+      devLog(`刪除附件 ${attachmentId} (使用 doclinksid) 的 API 回應:`, response);
       if (!response || typeof response.success !== 'boolean') {
          // 如果後端回應格式不符預期，拋出錯誤
          throw new Error('刪除附件的 API 回應格式不正確');
@@ -1001,7 +1007,7 @@ export const cmApi = {
     // 處理 isCompleted 欄位格式轉換 (boolean -> 'Y'/'N')
     const modifiedWorkOrder: any = { ...workOrder };
     if (modifiedWorkOrder.isCompleted !== undefined) {
-      console.log('原始 isCompleted 值:', modifiedWorkOrder.isCompleted, typeof modifiedWorkOrder.isCompleted);
+      devLog('原始 isCompleted 值:', modifiedWorkOrder.isCompleted, typeof modifiedWorkOrder.isCompleted);
       
       // 確保將布林值轉換為 'Y'/'N' 字串
       if (typeof modifiedWorkOrder.isCompleted === 'boolean') {
@@ -1012,11 +1018,11 @@ export const cmApi = {
         modifiedWorkOrder.isCompleted = 'N';
       }
       
-      console.log('轉換後 isCompleted 值:', modifiedWorkOrder.isCompleted);
+      devLog('轉換後 isCompleted 值:', modifiedWorkOrder.isCompleted);
     }
     
     // 使用與PM工單相同的更新API
-    console.log('使用PM工單API更新CM工單:', modifiedWorkOrder);
+    devLog('使用PM工單API更新CM工單:', modifiedWorkOrder);
     const url = buildApiUrl('MOBILEAPP_UPDATE_PM_WORKORDER', { wonum: id });
     return apiRequest<CMWorkOrderDetail>(url, 'POST', { params: { workOrder: modifiedWorkOrder } });
   },
@@ -1026,7 +1032,7 @@ export const cmApi = {
     // 判斷是否使用模擬資料
     if (process.env.NEXT_PUBLIC_USE_MOCK_DATA === 'true') {
       // 這裡模擬建立操作，實際應該是發送POST請求到API
-      console.log('Creating new CM work order with:', workOrder);
+      devLog('Creating new CM work order with:', workOrder);
       
       // 模擬建立成功並返回一個帶有ID的工單
       const newId = `WOC${Date.now().toString().substring(0, 8)}`;
@@ -1069,7 +1075,7 @@ export const cmApi = {
     // 判斷是否使用模擬資料
     if (process.env.NEXT_PUBLIC_USE_MOCK_DATA === 'true') {
       await simulateApiDelay(500);
-      console.log('模擬保存CM工單數據:', workOrderData);
+      devLog('模擬保存CM工單數據:', workOrderData);
       
       // 模擬返回更新後的工單詳情
       return {
@@ -1081,7 +1087,7 @@ export const cmApi = {
     }
     
     // 使用與PM工單相同的更新API
-    console.log('保存CM工單數據，使用PM更新API:', workOrderData);
+    devLog('保存CM工單數據，使用PM更新API:', workOrderData);
     const url = buildApiUrl('MOBILEAPP_UPDATE_PM_WORKORDER', { wonum: workOrderData.id });
     
     // 構建正確的請求體格式
@@ -1094,17 +1100,17 @@ export const cmApi = {
     // 判斷是否使用模擬資料
     if (process.env.NEXT_PUBLIC_USE_MOCK_DATA === 'true') {
       await simulateApiDelay(300);
-      console.log('Simulating saving CM work order field - Original data:', JSON.stringify(fieldData));
+      devLog('Simulating saving CM work order field - Original data:', JSON.stringify(fieldData));
       
       // 檢查是否有異常類型欄位並記錄
       if ('abnormalType' in fieldData) {
-        console.log('Found abnormal type field value:', fieldData.abnormalType);
-        console.log('Abnormal type value type:', typeof fieldData.abnormalType);
-        console.log('Abnormal type value length:', fieldData.abnormalType.length);
+        devLog('Found abnormal type field value:', fieldData.abnormalType);
+        devLog('Abnormal type value type:', typeof fieldData.abnormalType);
+        devLog('Abnormal type value length:', fieldData.abnormalType.length);
         
         // 確保異常類型值不會被設置為空
         if (!fieldData.abnormalType) {
-          console.log('Warning: Abnormal type value is empty');
+          devLog('Warning: Abnormal type value is empty');
         }
       }
       
@@ -1117,16 +1123,16 @@ export const cmApi = {
         reportItems: []
       } as unknown as CMWorkOrderDetail;
       
-      console.log('Simulating saving CM work order field - Result:', JSON.stringify(result));
+      devLog('Simulating saving CM work order field - Result:', JSON.stringify(result));
       return result;
     }
     
     // 使用實際API
-    console.log('Preparing to call actual API to save field:', JSON.stringify(fieldData));
+    devLog('Preparing to call actual API to save field:', JSON.stringify(fieldData));
     
     // 檢查異常類型欄位 (如果存在)
     if ('abnormalType' in fieldData) {
-      console.log('Preparing to save abnormal type:', fieldData.abnormalType);
+      devLog('Preparing to save abnormal type:', fieldData.abnormalType);
       
       // 如果異常類型為空，拒絕保存
       if (!fieldData.abnormalType) {
@@ -1138,7 +1144,7 @@ export const cmApi = {
     
     // 構建正確的請求體，確保欄位被正確包裝
     const requestBody = { params: { workOrder: fieldData } };
-    console.log('API request body:', JSON.stringify(requestBody));
+    devLog('API request body:', JSON.stringify(requestBody));
     
     return apiRequest<CMWorkOrderDetail>(url, 'POST', requestBody);
   },
@@ -1240,7 +1246,7 @@ export const cmApi = {
     // 判斷是否使用模擬資料
     if (process.env.NEXT_PUBLIC_USE_MOCK_DATA === 'true') {
       await simulateApiDelay(500);
-      console.log('模擬取消CM工單:', id, '取消原因:', reason);
+      devLog('模擬取消CM工單:', id, '取消原因:', reason);
       
       // 模擬API返回
       return {
@@ -1252,40 +1258,6 @@ export const cmApi = {
     // 使用實際API
     const url = buildApiUrl('MOBILEAPP_CANCEL_CM_WORKORDER', { wonum: id });
     return apiRequest<{ success: boolean; message: string }>(url, 'POST', { reason });
-  },
-
-  /**
-   * 從 Ollama API 產生故障描述建議
-   * @param prompt 提示詞
-   * @returns Ollama API 的回應
-   */
-  async generateFailureDescription(prompt: string): Promise<any> {
-    try {
-      const response = await fetch('http://ollama.webtw.xyz:11434/api/generate', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'mistral-small:latest', // 或者你可以讓模型名稱成為參數
-          prompt: prompt,
-          stream: false,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        console.error("Ollama API error response:", errorData);
-        throw new Error(`Ollama API request failed with status ${response.status}: ${errorData.error || 'Unknown error'}`);
-      }
-
-      const data = await response.json();
-      console.log("Ollama API response:", data);
-      return data; // 回傳完整的 API 回應
-    } catch (error) {
-      console.error('Error calling Ollama API:', error);
-      throw error; // 將錯誤向上拋出以便呼叫端處理
-    }
   },
 
   // 同樣地，如果 CM 工單也需要刪除附件，可以在 cmApi 中加入類似的函數，
@@ -1408,7 +1380,7 @@ export const uploadPmAttachment = async (attachment: PmAttachment): Promise<any>
   // 判斷是否使用模擬資料
   if (process.env.NEXT_PUBLIC_USE_MOCK_DATA === 'true') {
     await simulateApiDelay(1000);
-    console.log('模擬上傳附件:', attachment.fileName);
+    devLog('模擬上傳附件:', attachment.fileName);
     return { success: true, message: '附件上傳成功' };
   }
   

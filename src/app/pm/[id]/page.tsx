@@ -8,6 +8,9 @@ import WorkReport from '@/components/WorkReport';
 import SubmitModal from '@/components/SubmitModal';
 import api, { PMWorkOrderDetail, Manager, CheckItem, LaborResource, MaterialResource, ToolResource, getManagerList } from '@/services/api';
 import { isWorkOrderEditable, getWorkOrderNonEditableReason } from '@/utils/workOrderUtils';
+import PMHeader from './_components/PMHeader';
+import PMInfoTab from './_components/PMInfoTab';
+import PMTabBar from './_components/PMTabBar';
 
 export default function PMDetailPage({ params }: { params: { id: string } }) {
   const router = useRouter();
@@ -690,312 +693,35 @@ export default function PMDetailPage({ params }: { params: { id: string } }) {
   return (
     <div className="flex flex-col h-screen bg-gray-50">
       {/* 頂部固定區域 */}
-      <div className="flex-none bg-white">
-        {/* 標題列 */}
-        <div className="h-14 flex items-center px-4 border-b">
-          <button onClick={handleGoBack} className="text-gray-600 hover:text-gray-900">
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-          </button>
-          <div className="ml-4 text-xl font-medium truncate">{workOrder.id}</div>
-          <div className="flex-1"></div>
-          <div className="flex space-x-2">
-            <button 
-              onClick={handleSave} 
-              disabled={!isDirty || !isEditable}
-              className={`border px-3 py-1 rounded ${
-                isDirty && isEditable 
-                  ? "border-blue-600 text-blue-600 hover:bg-blue-50" 
-                  : "border-gray-300 text-gray-300 cursor-not-allowed"
-              }`}
-            >
-              {t('save')}
-            </button>
-            <button 
-              onClick={handleComplete} 
-              disabled={isSubmitting || !isEditable}
-              className={`bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700 ${(isSubmitting || !isEditable) ? 'opacity-50 cursor-not-allowed' : ''}`}
-            >
-              {isSubmitting 
-                ? (language === 'zh' ? '處理中...' : 'Processing...') 
-                : getActionButtonText()
-              }
-            </button>
-          </div>
-        </div>
-
-        {/* 工單狀態 */}
-        <div className="px-4 py-2 border-b">
-          <div className="flex items-center space-x-2">
-            <span className={`h-2 w-2 rounded-full ${getStatusColor()}`}></span>
-            <span>{getStatusDisplay()}</span>
-            
-            {/* 不可編輯提示 */}
-            {!isEditable && (
-              <span className="ml-2 text-sm text-red-500">{nonEditableReason}</span>
-            )}
-          </div>
-        </div>
-      </div>
+      <PMHeader
+        workOrder={workOrder}
+        language={language}
+        isDirty={isDirty}
+        isEditable={isEditable}
+        isSubmitting={isSubmitting}
+        nonEditableReason={nonEditableReason}
+        saveLabel={t('save')}
+        actionButtonText={getActionButtonText()}
+        statusDisplay={getStatusDisplay()}
+        statusColor={getStatusColor()}
+        onGoBack={handleGoBack}
+        onSave={handleSave}
+        onComplete={handleComplete}
+      />
 
       {/* 主要內容區域 - 可滾動 */}
       <div className="flex-1 overflow-auto">
         {/* 基本資訊頁面 */}
         {activeTab === 'info' && (
-          <div className="bg-white">
-            <div className="divide-y">
-              <div className="flex px-4 py-3">
-                <div className="w-28 text-gray-600">{t('openTime')}</div>
-                <div className="flex-1">{workOrder.openTime}</div>
-                <div className="text-red-500 font-medium">{workOrder.creator}</div>
-              </div>
-
-              <div className="flex px-4 py-3">
-                <div className="w-28 text-gray-600">{t('factoryCategory')}</div>
-                <div className="flex-1">{workOrder.systemCode} {workOrder.equipmentCode}</div>
-              </div>
-
-              <div className="flex px-4 py-3">
-                <div className="w-28 text-gray-600">{t('description')}</div>
-                <div className="flex-1">{workOrder.description}</div>
-              </div>
-
-              <div className="flex px-4 py-3">
-                <div className="w-28 text-gray-600">{t('asset')}</div>
-                <div className="flex-1">{workOrder.assets}</div>
-              </div>
-
-              <div className="flex px-4 py-3">
-                <div className="w-28 text-gray-600">{t('location')}</div>
-                <div className="flex-1">{workOrder.location}</div>
-              </div>
-
-              <div className="flex px-4 py-3">
-                <div className="w-28 text-gray-600">{t('route')}</div>
-                <div className="flex-1">{workOrder.route}</div>
-              </div>
-
-              <div className="flex px-4 py-3">
-                <div className="w-28 text-gray-600">{t('equipmentType')}</div>
-                <div className="flex-1">{workOrder.equipmentType}</div>
-              </div>
-
-              <div className="flex px-4 py-3">
-                <div className="w-28 text-gray-600">{t('reportTime')}</div>
-                <div className="flex-1">{workOrder.reportTime}</div>
-              </div>
-
-              <div className="flex px-4 py-3">
-                <div className="w-28 text-gray-600">{t('reportPerson')}</div>
-                <div className="flex-1 text-red-500 font-medium">{workOrder.reportPerson}</div>
-              </div>
-            </div>
-
-            {/* 維修時間和負責人員 */}
-            <div className="p-4 space-y-4 border-t">
-              {/* 時間快速設置按鈕 */}
-              <div className="flex items-center justify-between mb-2">
-                <div className="text-sm text-gray-600 font-medium">Quick Time Set:</div>
-                <div className="flex space-x-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      // 創建一個新的日期對象
-                      const now = new Date();
-                      // 調整為UTC+8時區，加上8小時
-                      const utc8Now = new Date(now.getTime() + 8 * 60 * 60 * 1000);
-                      const startDateTime = utc8Now.toISOString().slice(0, 16);
-                      // 加1小時
-                      const endDateTime = new Date(utc8Now.getTime() + 1 * 60 * 60 * 1000).toISOString().slice(0, 16);
-                      
-                      setMaintenanceTime({
-                        startDate: startDateTime,
-                        endDate: endDateTime
-                      });
-                    }}
-                    className="flex items-center justify-center bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-full w-8 h-8"
-                    title="Set current time + 1 hour (UTC+8)"
-                  >
-                    <span className="text-xs font-semibold">+1h</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      // 創建一個新的日期對象
-                      const now = new Date();
-                      // 調整為UTC+8時區，加上8小時
-                      const utc8Now = new Date(now.getTime() + 8 * 60 * 60 * 1000);
-                      const startDateTime = utc8Now.toISOString().slice(0, 16);
-                      // 加2小時
-                      const endDateTime = new Date(utc8Now.getTime() + 2 * 60 * 60 * 1000).toISOString().slice(0, 16);
-                      
-                      setMaintenanceTime({
-                        startDate: startDateTime,
-                        endDate: endDateTime
-                      });
-                    }}
-                    className="flex items-center justify-center bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-full w-8 h-8"
-                    title="Set current time + 2 hours (UTC+8)"
-                  >
-                    <span className="text-xs font-semibold">+2h</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      // 創建一個新的日期對象
-                      const now = new Date();
-                      // 調整為UTC+8時區，加上8小時
-                      const utc8Now = new Date(now.getTime() + 8 * 60 * 60 * 1000);
-                      const startDateTime = utc8Now.toISOString().slice(0, 16);
-                      // 加4小時
-                      const endDateTime = new Date(utc8Now.getTime() + 4 * 60 * 60 * 1000).toISOString().slice(0, 16);
-                      
-                      setMaintenanceTime({
-                        startDate: startDateTime,
-                        endDate: endDateTime
-                      });
-                    }}
-                    className="flex items-center justify-center bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-full w-8 h-8"
-                    title="Set current time + 4 hours (UTC+8)"
-                  >
-                    <span className="text-xs font-semibold">+4h</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      // 創建一個新的日期對象
-                      const now = new Date();
-                      // 調整為UTC+8時區，加上8小時
-                      const utc8Now = new Date(now.getTime() + 8 * 60 * 60 * 1000);
-                      const startDateTime = utc8Now.toISOString().slice(0, 16);
-                      // 加8小時
-                      const endDateTime = new Date(utc8Now.getTime() + 8 * 60 * 60 * 1000).toISOString().slice(0, 16);
-                      
-                      setMaintenanceTime({
-                        startDate: startDateTime,
-                        endDate: endDateTime
-                      });
-                    }}
-                    className="flex items-center justify-center bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-full w-8 h-8"
-                    title="Set current time + 8 hours (UTC+8)"
-                  >
-                    <span className="text-xs font-semibold">+8h</span>
-                  </button>
-                </div>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm text-gray-600 mb-1">
-                    Start Time
-                    {!maintenanceTime.startDate && (
-                      <span className="text-red-500 ml-1">*</span>
-                    )}
-                  </label>
-                  <input
-                    type="datetime-local"
-                    className={`w-full border rounded px-3 py-3 text-base focus:ring-1 ${
-                      maintenanceTime.startDate 
-                        ? 'border-green-500 focus:border-green-500 focus:ring-green-500' 
-                        : 'border-gray-300 focus:border-blue-500 focus:ring-blue-500'
-                    }`}
-                    value={maintenanceTime.startDate}
-                    onChange={(e) => setMaintenanceTime(prev => ({ ...prev, startDate: e.target.value }))}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm text-gray-600 mb-1">
-                    End Time
-                    {!maintenanceTime.endDate && (
-                      <span className="text-red-500 ml-1">*</span>
-                    )}
-                  </label>
-                  <input
-                    type="datetime-local"
-                    className={`w-full border rounded px-3 py-3 text-base focus:ring-1 ${
-                      maintenanceTime.endDate 
-                        ? 'border-green-500 focus:border-green-500 focus:ring-green-500' 
-                        : 'border-gray-300 focus:border-blue-500 focus:ring-blue-500'
-                    }`}
-                    value={maintenanceTime.endDate}
-                    onChange={(e) => setMaintenanceTime(prev => ({ ...prev, endDate: e.target.value }))}
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm text-gray-600 mb-1">
-                  {t('owner')}
-                  {!selectedStaff.owner && (
-                    <span className="text-red-500 ml-1">*</span>
-                  )}
-                </label>
-                <select
-                  className={`w-full border rounded px-3 py-2 focus:outline-none focus:ring-1 ${
-                    selectedStaff.owner 
-                      ? 'border-green-500 focus:border-green-500 focus:ring-green-500' 
-                      : 'border-gray-300 focus:border-blue-500 focus:ring-blue-500'
-                  }`}
-                  value={selectedStaff.owner}
-                  onChange={(e) => setSelectedStaff(prev => ({ ...prev, owner: e.target.value }))}
-                >
-                  <option value="">{t('selectOwner')}</option>
-                  {managerList.map(staff => (
-                    <option key={staff.id} value={staff.id}>
-                      {staff.id} - {staff.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm text-gray-600 mb-1">
-                  {t('lead')}
-                  {!selectedStaff.lead && (
-                    <span className="text-red-500 ml-1">*</span>
-                  )}
-                </label>
-                <select
-                  className={`w-full border rounded px-3 py-2 focus:outline-none focus:ring-1 ${
-                    selectedStaff.lead 
-                      ? 'border-green-500 focus:border-green-500 focus:ring-green-500' 
-                      : 'border-gray-300 focus:border-blue-500 focus:ring-blue-500'
-                  }`}
-                  value={selectedStaff.lead}
-                  onChange={(e) => setSelectedStaff(prev => ({ ...prev, lead: e.target.value }))}
-                >
-                  <option value="">{t('selectLead')}</option>
-                  {managerList.map(staff => (
-                    <option key={staff.id} value={staff.id}>
-                      {staff.id} - {staff.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm text-gray-600 mb-1">
-                  {t('supervisor')}
-                  {!selectedStaff.supervisor && (
-                    <span className="text-red-500 ml-1">*</span>
-                  )}
-                </label>
-                <select
-                  className={`w-full border rounded px-3 py-2 focus:outline-none focus:ring-1 ${
-                    selectedStaff.supervisor 
-                      ? 'border-green-500 focus:border-green-500 focus:ring-green-500' 
-                      : 'border-gray-300 focus:border-blue-500 focus:ring-blue-500'
-                  }`}
-                  value={selectedStaff.supervisor}
-                  onChange={(e) => setSelectedStaff(prev => ({ ...prev, supervisor: e.target.value }))}
-                >
-                  <option value="">{t('selectSupervisor')}</option>
-                  {managerList.map(staff => (
-                    <option key={staff.id} value={staff.id}>
-                      {staff.id} - {staff.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          </div>
+          <PMInfoTab
+            workOrder={workOrder}
+            managerList={managerList}
+            maintenanceTime={maintenanceTime}
+            selectedStaff={selectedStaff}
+            setMaintenanceTime={setMaintenanceTime}
+            setSelectedStaff={setSelectedStaff}
+            t={t}
+          />
         )}
 
         {/* ActualCheck 組件 */}
@@ -1025,109 +751,15 @@ export default function PMDetailPage({ params }: { params: { id: string } }) {
       <div className="h-24"></div>
 
       {/* 底部固定按鈕 */}
-      <div className="flex-none bg-blue-600 text-white fixed bottom-0 left-0 right-0">
-        <div className="grid grid-cols-3 divide-x divide-white/30">
-          <button 
-            className={`py-4 text-center hover:bg-blue-700 ${activeTab === 'info' ? 'bg-blue-800' : ''}`}
-            onClick={() => setActiveTab('info')}
-          >
-            <div className="flex flex-col items-center space-y-1 relative">
-              <div className="relative">
-                <svg 
-                  className={`w-6 h-6 ${isMaintenanceInfoComplete() ? 'text-green-400' : ''}`} 
-                  fill="none" 
-                  stroke="currentColor" 
-                  viewBox="0 0 24 24"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                {isMaintenanceInfoComplete() && (
-                  <div className="absolute -top-1 -right-1 bg-green-500 rounded-full w-3 h-3 flex items-center justify-center">
-                    <svg className="w-2 h-2 text-white" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                    </svg>
-                  </div>
-                )}
-              </div>
-              <span>Info</span>
-            </div>
-          </button>
-          
-          <button 
-            className={`py-4 text-center ${
-              activeTab === 'actual' 
-                ? 'bg-blue-800' 
-                : 'hover:bg-blue-700'
-            } ${
-              (!workOrder.checkItems || workOrder.checkItems.length === 0) 
-                ? 'opacity-70 cursor-not-allowed' 
-                : ''
-            }`}
-            onClick={() => {
-              if (workOrder.checkItems && workOrder.checkItems.length > 0) {
-                setActiveTab('actual');
-              }
-            }}
-            disabled={!workOrder.checkItems || workOrder.checkItems.length === 0}
-          >
-            <div className="flex flex-col items-center space-y-1 relative">
-              <div className="relative">
-                <svg 
-                  className={`w-6 h-6 ${
-                    actualCheckComplete 
-                      ? 'text-green-400' 
-                      : (!workOrder.checkItems || workOrder.checkItems.length === 0) 
-                        ? 'text-white/70' 
-                        : 'text-white'
-                  }`} 
-                  fill="none" 
-                  stroke="currentColor" 
-                  viewBox="0 0 24 24"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-                </svg>
-                {actualCheckComplete && (
-                  <div className="absolute -top-1 -right-1 bg-green-500 rounded-full w-3 h-3 flex items-center justify-center">
-                    <svg className="w-2 h-2 text-white" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                    </svg>
-                  </div>
-                )}
-              </div>
-              <span>Actual</span>
-              {(!workOrder.checkItems || workOrder.checkItems.length === 0) && (
-                <span className="text-xs text-white/70">No check items</span>
-              )}
-            </div>
-          </button>
-
-          <button 
-            className={`py-4 text-center hover:bg-blue-700 ${activeTab === 'report' ? 'bg-blue-800' : ''}`}
-            onClick={() => setActiveTab('report')}
-          >
-            <div className="flex flex-col items-center space-y-1 relative">
-              <div className="relative">
-                <svg 
-                  className={`w-6 h-6 ${resourceComplete ? 'text-green-400' : ''}`} 
-                  fill="none" 
-                  stroke="currentColor" 
-                  viewBox="0 0 24 24"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                {resourceComplete && (
-                  <div className="absolute -top-1 -right-1 bg-green-500 rounded-full w-3 h-3 flex items-center justify-center">
-                    <svg className="w-2 h-2 text-white" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                    </svg>
-                  </div>
-                )}
-              </div>
-              <span>{t('resource')}</span>
-            </div>
-          </button>
-        </div>
-      </div>
+      <PMTabBar
+        workOrder={workOrder}
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        isMaintenanceInfoComplete={isMaintenanceInfoComplete}
+        actualCheckComplete={actualCheckComplete}
+        resourceComplete={resourceComplete}
+        resourceLabel={t('resource')}
+      />
 
       {/* Submit Modal */}
       <SubmitModal

@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+// 允許代理的目標來源（Maximo 後端）
+const ALLOWED_ORIGIN = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://hl.webtw.xyz';
+
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const imageUrl = searchParams.get('url');
@@ -11,6 +14,11 @@ export async function GET(request: NextRequest) {
   try {
     // 使用 URL 建構函數驗證 URL 合法性
     const validatedUrl = new URL(imageUrl);
+
+    // SSRF 防護：只允許白名單 origin
+    if (validatedUrl.origin !== ALLOWED_ORIGIN) {
+      return new Response('Image URL not allowed', { status: 400 });
+    }
 
     // 在伺服器端 fetch 原始圖片
     const response = await fetch(validatedUrl.toString(), {

@@ -1,7 +1,8 @@
 'use client';
 
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import api, { User } from '@/services/api';
+import { usePathname, useRouter } from 'next/navigation';
+import { User } from '@/services/api';
 
 interface UserContextType {
   user: User | null;
@@ -26,6 +27,8 @@ const UserContext = createContext<UserContextType>(initialUserContext);
 export const useUser = () => useContext(UserContext);
 
 export const UserProvider = ({ children }: { children: ReactNode }) => {
+  const router = useRouter();
+  const pathname = usePathname();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<Error | null>(null);
@@ -33,7 +36,23 @@ export const UserProvider = ({ children }: { children: ReactNode }) => {
   const fetchUser = async () => {
     try {
       setLoading(true);
-      const userData = await api.user.getCurrentUser();
+      const res = await fetch('/api/user/current');
+
+      // 無有效 session：清空狀態，非登入頁則導向登入頁
+      if (res.status === 401) {
+        setUser(null);
+        setError(null);
+        if (pathname !== '/') {
+          router.push('/');
+        }
+        return;
+      }
+
+      if (!res.ok) {
+        throw new Error(`HTTP error! Status: ${res.status}`);
+      }
+
+      const userData: User = await res.json();
       setUser(userData);
       setError(null);
     } catch (err) {

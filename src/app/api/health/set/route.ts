@@ -2,6 +2,8 @@ import { NextResponse, NextRequest } from 'next/server';
 import type { SystemHealth } from '@/services/api';
 
 // 保存當前模擬的健康狀態
+// TODO: module 級變數在多實例 / serverless 環境不會共享，
+// 正式環境需改為外部儲存（如 Redis / DB）才能跨實例同步維護狀態。
 let currentHealthStatus: SystemHealth = {
   status: 'ok',
   message: '系統運行正常'
@@ -10,12 +12,13 @@ let currentHealthStatus: SystemHealth = {
 // 設置系統健康狀態 (需要管理員權限)
 export async function POST(request: NextRequest) {
   try {
-    // 在真實環境中，這裡應該檢查用戶權限
-    // const token = request.headers.get('authorization')?.split(' ')[1];
-    // if (!token || !isAdminToken(token)) {
-    //   return NextResponse.json({ error: '未授權操作' }, { status: 401 });
-    // }
-    
+    // 權限檢查：目前沒有真實 session 機制，改以 server 端 secret header 驗證
+    const adminToken = process.env.HEALTH_ADMIN_TOKEN;
+    const requestToken = request.headers.get('x-health-admin-token');
+    if (!adminToken || requestToken !== adminToken) {
+      return NextResponse.json({ error: '未授權操作' }, { status: 401 });
+    }
+
     const body = await request.json();
     
     if (!body || !body.status) {

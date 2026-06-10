@@ -12,33 +12,60 @@ export default function LoginPage() {
     password: ''
   });
   const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Check if already logged in
+  // Check if already logged in (via server session)
   useEffect(() => {
-    // Check login status from localStorage
-    const isLoggedIn = localStorage.getItem('isLoggedIn') === 'true';
-    if (isLoggedIn) {
-      router.push('/pm');
-    } else {
-      setIsLoading(false);
-    }
+    let cancelled = false;
+    const checkSession = async () => {
+      try {
+        const res = await fetch('/api/user/current');
+        if (!cancelled && res.ok) {
+          router.push('/pm');
+          return;
+        }
+      } catch {
+        // ignore，視為未登入
+      }
+      if (!cancelled) {
+        setIsLoading(false);
+      }
+    };
+    checkSession();
+    return () => {
+      cancelled = true;
+    };
   }, [router]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // Simple login validation
-    if (formData.username && formData.password) {
-      // In a real application, this should call a backend API
-      console.log('Login successful');
-      
-      // Set login status
-      localStorage.setItem('isLoggedIn', 'true');
-      
-      // Navigate to PM page
-      router.push('/pm');
-    } else {
+
+    if (!formData.username || !formData.password) {
       alert('Please enter username and password');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: formData.username,
+          password: formData.password,
+        }),
+      });
+
+      if (res.ok) {
+        // session cookie 已由 server 簽發，導向 PM 頁
+        router.push('/pm');
+      } else {
+        alert('Invalid username or password');
+      }
+    } catch {
+      alert('Login failed. Please try again.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -154,7 +181,8 @@ export default function LoginPage() {
 
             <button
               type="submit"
-              className="w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-white bg-teal-600 hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500 transition-colors duration-200"
+              disabled={isSubmitting}
+              className="w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-white bg-teal-600 hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500 transition-colors duration-200 disabled:opacity-60"
             >
               Log in
             </button>

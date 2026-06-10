@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import { apiRequest } from '@/services/api';
+import { isDataDirty, getChangedFields } from './dataSaveUtils';
 
 interface DataSaveHookProps<T> {
   // 初始資料
@@ -56,14 +57,7 @@ export function useDataSave<T extends Record<string, any>>({
 
   // 當資料變更時，檢查是否與原始資料不同
   useEffect(() => {
-    if (data === null || originalData === null) {
-      setIsDirty(false);
-      return;
-    }
-
-    // 使用 JSON 序列化進行深度比較
-    const isDifferent = JSON.stringify(data) !== JSON.stringify(originalData);
-    setIsDirty(isDifferent);
+    setIsDirty(isDataDirty(data, originalData));
   }, [data, originalData]);
 
   // 在useDataSave.ts中添加資料驗證
@@ -86,15 +80,8 @@ export function useDataSave<T extends Record<string, any>>({
 
     try {
       // 只包含變更的欄位
-      const changedFields: Partial<T> = {};
-      const dataKeys = Object.keys(data) as Array<keyof T>;
-      
-      for (const key of dataKeys) {
-        if (JSON.stringify(data[key]) !== JSON.stringify(originalData[key])) {
-          changedFields[key] = data[key];
-        }
-      }
-      
+      const changedFields = getChangedFields(data, originalData);
+
       // 選擇性地進行資料驗證
       // if (Object.keys(changedFields).length > 0) {
       //   validateData(data);

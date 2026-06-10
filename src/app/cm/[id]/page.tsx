@@ -9,6 +9,9 @@ import SubmitModal from '@/components/SubmitModal';
 import CancelModal from '@/components/CancelModal';
 import api, { CMWorkOrderDetail, Manager, CheckItem, LaborResource, MaterialResource, ToolResource, getManagerList } from '@/services/api';
 import { isWorkOrderEditable, getWorkOrderNonEditableReason } from '@/utils/workOrderUtils';
+import InfoBasicCard from './_components/InfoBasicCard';
+import StaffCard from './_components/StaffCard';
+import MaintenanceTimeCard from './_components/MaintenanceTimeCard';
 
 export default function CMDetailPage({ params }: { params: { id: string } }) {
   const router = useRouter();
@@ -1145,366 +1148,39 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
               {activeTab === 'info' && (
                 <div className="space-y-6">
                   {/* 基本信息卡片 */}
-                  <div className="bg-white rounded-lg shadow">
-                    <div className="divide-y">
-                      {/* 工單號碼 */}
-                      <div className="flex px-4 py-3">
-                        <div className="w-28 text-gray-600">{t('workOrderId')}</div>
-                        <div className="flex-1">{workOrder.id}</div>
-                      </div>
-                      
-                      {/* 故障設備 - 可編輯 */}
-                      <div className="flex px-4 py-3">
-                        <div className="w-28 text-gray-600">{t('assets')}</div>
-                        <div className="flex-1">
-                          {editing.assets ? (
-                            <div className="flex flex-col">
-                              <textarea
-                                className="w-full border rounded px-3 py-2 mb-2"
-                                value={editableFields.assets}
-                                onChange={(e) => setEditableFields({...editableFields, assets: e.target.value})}
-                                rows={3}
-                                disabled={!isEditable}
-                              ></textarea>
-                              <div className="flex justify-end space-x-2">
-                                <button 
-                                  onClick={() => cancelEditing('assets')} 
-                                  className="border px-3 py-1 rounded hover:bg-gray-50"
-                                >
-                                  {t('cancel')}
-                                </button>
-                                <button 
-                                  onClick={() => saveField('assets')} 
-                                  className="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700"
-                                >
-                                  {t('save')}
-                                </button>
-                              </div>
-                            </div>
-                          ) : (
-                            <div 
-                              className="py-1 px-2 -mx-2 rounded hover:bg-blue-50 cursor-pointer flex"
-                              onClick={() => isEditable && startEditing('assets')}
-                            >
-                              <div className="flex-1">
-                                {editableFields.assets}
-                              </div>
-                              {isEditable && (
-                                <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                                </svg>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                      
-                      {/* 移除工單描述部分 */}
-
-                      <div className="flex px-4 py-3">
-                        <div className="w-28 text-gray-600">{t('location')}</div>
-                        <div className="flex-1">{workOrder.location}</div>
-                      </div>
-
-                      <div className="flex px-4 py-3">
-                        <div className="w-28 text-gray-600">{t('equipmentType')}</div>
-                        <div className="flex-1">{workOrder.equipmentType}</div>
-                      </div>
-
-                      {/* 添加指定人員欄位 */}
-                      <div className="flex px-4 py-3">
-                        <div className="w-28 text-gray-600">{t('systemEngineer')}</div>
-                        <div className="flex-1">{workOrder.systemEngineer || '-'}</div>
-                      </div>
-
-                      {/* 可編輯的異常類型欄位 */}
-                      <div className="flex px-4 py-3">
-                        <div className="w-28 text-gray-600">{t('abnormalType')}</div>
-                        <div className="flex-1">
-                          {editing.abnormalType ? (
-                            <div className="flex flex-col">
-                              <select
-                                className="w-full border rounded px-3 py-2 mb-2"
-                                value={editableFields.abnormalType}
-                                onChange={(e) => setEditableFields({...editableFields, abnormalType: e.target.value})}
-                                disabled={!isEditable}
-                              >
-                                <option value="">{t('pleaseSelect')}</option>
-                                <option value="機械">{t('mechanical')}</option>
-                                <option value="電氣">{t('electrical')}</option>
-                                <option value="液壓">{t('hydraulic')}</option>
-                                <option value="氣動">{t('pneumatic')}</option>
-                                <option value="其他">{t('other')}</option>
-                              </select>
-                              <div className="flex justify-end space-x-2">
-                                <button 
-                                  onClick={() => cancelEditing('abnormalType')} 
-                                  className="border px-3 py-1 rounded hover:bg-gray-50"
-                                >
-                                  {t('cancel')}
-                                </button>
-                                <button 
-                                  onClick={() => saveField('abnormalType')} 
-                                  className="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700"
-                                >
-                                  {t('save')}
-                                </button>
-                              </div>
-                            </div>
-                          ) : (
-                            <div 
-                              className="py-1 px-2 -mx-2 rounded hover:bg-blue-50 cursor-pointer flex"
-                              onClick={() => isEditable && startEditing('abnormalType')}
-                            >
-                              <div className="flex-1">
-                                {editableFields.abnormalType || t('pleaseSelect')}
-                              </div>
-                              {isEditable && (
-                                <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                                </svg>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+                  <InfoBasicCard
+                    workOrder={workOrder}
+                    editableFields={editableFields}
+                    setEditableFields={setEditableFields}
+                    editing={editing}
+                    isEditable={isEditable}
+                    startEditing={startEditing}
+                    saveField={saveField}
+                    cancelEditing={cancelEditing}
+                    t={t}
+                  />
 
                   {/* 人員信息卡片 */}
-                  <div className="bg-white rounded-lg shadow">
-                    <div className="p-4">
-                      <div className="grid grid-cols-1 gap-4">
-                        <div>
-                          <label className="block text-sm text-gray-600 mb-1">
-                            {t('owner')}
-                            {!selectedStaff.owner && (
-                              <span className="text-red-500 ml-1">*</span>
-                            )}
-                          </label>
-                          <select
-                            className={`w-full border rounded px-3 py-3 text-base focus:ring-1 ${
-                              selectedStaff.owner 
-                                ? 'border-green-500 focus:border-green-500 focus:ring-green-500' 
-                                : 'border-gray-300 focus:border-blue-500 focus:ring-blue-500'
-                            }`}
-                            value={selectedStaff.owner}
-                            onChange={(e) => {
-                              setSelectedStaff({...selectedStaff, owner: e.target.value});
-                              setIsDirty(true);
-                            }}
-                            disabled={!isEditable}
-                          >
-                            <option value="">{t('pleaseSelect')}</option>
-                            {managerList.map((manager: any) => (
-                              <option key={manager.id} value={manager.id}>
-                                {manager.name}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block text-sm text-gray-600 mb-1">
-                            {t('lead')}
-                            {!selectedStaff.lead && (
-                              <span className="text-red-500 ml-1">*</span>
-                            )}
-                          </label>
-                          <select
-                            className={`w-full border rounded px-3 py-3 text-base focus:ring-1 ${
-                              selectedStaff.lead 
-                                ? 'border-green-500 focus:border-green-500 focus:ring-green-500' 
-                                : 'border-gray-300 focus:border-blue-500 focus:ring-blue-500'
-                            }`}
-                            value={selectedStaff.lead}
-                            onChange={(e) => {
-                              setSelectedStaff({...selectedStaff, lead: e.target.value});
-                              setIsDirty(true);
-                            }}
-                            disabled={!isEditable}
-                          >
-                            <option value="">{t('pleaseSelect')}</option>
-                            {managerList.map((manager: any) => (
-                              <option key={manager.id} value={manager.id}>
-                                {manager.name}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block text-sm text-gray-600 mb-1">
-                            {t('supervisor')}
-                            {!selectedStaff.supervisor && (
-                              <span className="text-red-500 ml-1">*</span>
-                            )}
-                          </label>
-                          <select
-                            className={`w-full border rounded px-3 py-3 text-base focus:ring-1 ${
-                              selectedStaff.supervisor 
-                                ? 'border-green-500 focus:border-green-500 focus:ring-green-500' 
-                                : 'border-gray-300 focus:border-blue-500 focus:ring-blue-500'
-                            }`}
-                            value={selectedStaff.supervisor}
-                            onChange={(e) => {
-                              setSelectedStaff({...selectedStaff, supervisor: e.target.value});
-                              setIsDirty(true);
-                            }}
-                            disabled={!isEditable}
-                          >
-                            <option value="">{t('pleaseSelect')}</option>
-                            {managerList.map((manager: any) => (
-                              <option key={manager.id} value={manager.id}>
-                                {manager.name}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+                  <StaffCard
+                    selectedStaff={selectedStaff}
+                    setSelectedStaff={setSelectedStaff}
+                    setIsDirty={setIsDirty}
+                    managerList={managerList}
+                    isEditable={isEditable}
+                    t={t}
+                  />
 
                   {/* 維護時間卡片 */}
-                  <div className="bg-white rounded-lg shadow">
-                    <div className="p-4">
-                      {/* 添加時間快速設置按鈕 */}
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="text-sm text-gray-600 font-medium">{language === 'zh' ? '快速設置時間:' : 'Quick Time Set:'}</div>
-                        <div className="flex space-x-2">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              // 創建一個新的日期對象
-                              const now = new Date();
-                              // 調整為UTC+8時區，加上8小時
-                              const utc8Now = new Date(now.getTime() + 8 * 60 * 60 * 1000);
-                              const startDateTime = utc8Now.toISOString().slice(0, 16);
-                              // 加1小時
-                              const endDateTime = new Date(utc8Now.getTime() + 1 * 60 * 60 * 1000).toISOString().slice(0, 16);
-                              
-                              setStartTime(startDateTime);
-                              setEndTime(endDateTime);
-                              setIsDirty(true);
-                            }}
-                            className="flex items-center justify-center bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-full w-8 h-8"
-                            title="Set current time + 1 hour (UTC+8)"
-                            disabled={!isEditable}
-                          >
-                            <span className="text-xs font-semibold">+1h</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              // 創建一個新的日期對象
-                              const now = new Date();
-                              // 調整為UTC+8時區，加上8小時
-                              const utc8Now = new Date(now.getTime() + 8 * 60 * 60 * 1000);
-                              const startDateTime = utc8Now.toISOString().slice(0, 16);
-                              // 加2小時
-                              const endDateTime = new Date(utc8Now.getTime() + 2 * 60 * 60 * 1000).toISOString().slice(0, 16);
-                              
-                              setStartTime(startDateTime);
-                              setEndTime(endDateTime);
-                              setIsDirty(true);
-                            }}
-                            className="flex items-center justify-center bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-full w-8 h-8"
-                            title="Set current time + 2 hours (UTC+8)"
-                            disabled={!isEditable}
-                          >
-                            <span className="text-xs font-semibold">+2h</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              // 創建一個新的日期對象
-                              const now = new Date();
-                              // 調整為UTC+8時區，加上8小時
-                              const utc8Now = new Date(now.getTime() + 8 * 60 * 60 * 1000);
-                              const startDateTime = utc8Now.toISOString().slice(0, 16);
-                              // 加4小時
-                              const endDateTime = new Date(utc8Now.getTime() + 4 * 60 * 60 * 1000).toISOString().slice(0, 16);
-                              
-                              setStartTime(startDateTime);
-                              setEndTime(endDateTime);
-                              setIsDirty(true);
-                            }}
-                            className="flex items-center justify-center bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-full w-8 h-8"
-                            title="Set current time + 4 hours (UTC+8)"
-                            disabled={!isEditable}
-                          >
-                            <span className="text-xs font-semibold">+4h</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              // 創建一個新的日期對象
-                              const now = new Date();
-                              // 調整為UTC+8時區，加上8小時
-                              const utc8Now = new Date(now.getTime() + 8 * 60 * 60 * 1000);
-                              const startDateTime = utc8Now.toISOString().slice(0, 16);
-                              // 加8小時
-                              const endDateTime = new Date(utc8Now.getTime() + 8 * 60 * 60 * 1000).toISOString().slice(0, 16);
-                              
-                              setStartTime(startDateTime);
-                              setEndTime(endDateTime);
-                              setIsDirty(true);
-                            }}
-                            className="flex items-center justify-center bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-full w-8 h-8"
-                            title="Set current time + 8 hours (UTC+8)"
-                            disabled={!isEditable}
-                          >
-                            <span className="text-xs font-semibold">+8h</span>
-                          </button>
-                        </div>
-                      </div>
-                      
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-sm text-gray-600 mb-1">
-                            {t('startTime')}
-                            {!startTime && (
-                              <span className="text-red-500 ml-1">*</span>
-                            )}
-                          </label>
-                          <input
-                            type="datetime-local"
-                            className={`w-full border rounded px-3 py-3 text-base focus:ring-1 ${
-                              startTime 
-                                ? 'border-green-500 focus:border-green-500 focus:ring-green-500' 
-                                : 'border-gray-300 focus:border-blue-500 focus:ring-blue-500'
-                            }`}
-                            value={startTime}
-                            onChange={(e) => {
-                              setStartTime(e.target.value);
-                              setIsDirty(true);
-                            }}
-                            disabled={!isEditable}
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm text-gray-600 mb-1">
-                            {t('endTime')}
-                            {!endTime && (
-                              <span className="text-red-500 ml-1">*</span>
-                            )}
-                          </label>
-                          <input
-                            type="datetime-local"
-                            className={`w-full border rounded px-3 py-3 text-base focus:ring-1 ${
-                              endTime 
-                                ? 'border-green-500 focus:border-green-500 focus:ring-green-500' 
-                                : 'border-gray-300 focus:border-blue-500 focus:ring-blue-500'
-                            }`}
-                            value={endTime}
-                            onChange={(e) => {
-                              setEndTime(e.target.value);
-                              setIsDirty(true);
-                            }}
-                            disabled={!isEditable}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+                  <MaintenanceTimeCard
+                    startTime={startTime}
+                    endTime={endTime}
+                    setStartTime={setStartTime}
+                    setEndTime={setEndTime}
+                    setIsDirty={setIsDirty}
+                    isEditable={isEditable}
+                    language={language}
+                    t={t}
+                  />
                 </div>
               )}
 

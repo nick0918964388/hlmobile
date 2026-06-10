@@ -1,26 +1,14 @@
-import { NextResponse, NextRequest } from 'next/server';
-import { User } from '@/services/api';
+import { NextRequest, NextResponse } from 'next/server';
+import { getSession, SESSION_COOKIE } from '@/lib/session';
 
-// 獲取當前用戶 - 包含必要的權限
-export async function GET() {
-  try {
-    // 直接返回預設用戶數據，包含 PM 和 CM 權限
-    return NextResponse.json({
-      id: 'user001',
-      username: 'testuser',
-      name: '測試用戶',
-      email: 'test@example.com',
-      avatar: '',
-      role: '工程師',
-      groups: ['engineers'],
-      department: '工程部',
-      permissions: ['pm.access', 'cm.access', 'settings.access', 'admin.access']
-    } as User);
-  } catch (error) {
-    console.error('獲取用戶數據錯誤:', error);
-    return NextResponse.json(
-      { error: '無法獲取用戶數據' }, 
-      { status: 500 }
-    );
+// 獲取當前用戶 - 從 session cookie 解析出已驗證使用者
+export async function GET(request: NextRequest) {
+  const token = request.cookies.get(SESSION_COOKIE)?.value;
+  const user = getSession(token);
+
+  if (!user) {
+    return NextResponse.json({ error: '未登入' }, { status: 401 });
   }
-} 
+
+  return NextResponse.json(user);
+}

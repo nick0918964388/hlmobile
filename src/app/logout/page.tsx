@@ -7,11 +7,13 @@ export default function LogoutPage() {
   const router = useRouter();
 
   useEffect(() => {
-    // 執行登出操作
-    const logout = () => {
-      // 移除登入狀態
-      localStorage.removeItem('isLoggedIn');
-      // 導航到登入頁面
+    // 執行登出操作：清除 server session cookie，再導向登入頁
+    const logout = async () => {
+      try {
+        await fetch('/api/auth/logout', { method: 'POST' });
+      } catch {
+        // 忽略錯誤，仍導向登入頁
+      }
       router.push('/');
     };
 

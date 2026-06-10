@@ -29,17 +29,19 @@ export default function Sidebar() {
     }
   }, [user]);
 
-  const handleLogout = () => {
-    // 移除登入狀態
-    localStorage.removeItem('isLoggedIn');
-    // 導航到登入頁面
+  const handleLogout = async () => {
+    // 清除 server session cookie，再導向登入頁
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } catch {
+      // 忽略錯誤，仍導向登入頁
+    }
     router.push('/');
   };
   
   const menuItems: MenuItem[] = [
     { id: '1', title: 'PM (Preventive Maintenance)', shortTitle: 'PM', path: '/pm', requiredPermission: 'pm.access' },
     { id: '2', title: 'CM (Correction Maintenance)', shortTitle: 'CM', path: '/cm', requiredPermission: 'cm.access' },
-    { id: '3', title: 'Debug', path: '/debug' },
     { id: '4', title: 'Admin', path: '/admin/health', requiredPermission: 'admin.access' },
     { id: '5', title: 'Language Settings', path: '/settings' },
     { id: '6', title: 'Logout', path: '#', onClick: handleLogout },

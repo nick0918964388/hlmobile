@@ -1,13 +1,32 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { ALLOWED_ORIGIN, validateTargetUrl } from './validateTargetUrl';
+
+// 前端 CORS 來源（無則同源，不使用 '*'）
+const CORS_ORIGIN = process.env.NEXT_PUBLIC_FRONTEND_ORIGIN || ALLOWED_ORIGIN;
+
+const corsHeaders = {
+  'Content-Type': 'application/json',
+  'Access-Control-Allow-Origin': CORS_ORIGIN,
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+};
 
 export async function GET(request: NextRequest) {
   try {
     // 獲取要請求的目標URL
     const targetUrl = request.nextUrl.searchParams.get('url');
-    
+
     if (!targetUrl) {
       return NextResponse.json(
-        { error: '缺少目標URL參數' }, 
+        { error: '缺少目標URL參數' },
+        { status: 400 }
+      );
+    }
+
+    // SSRF 防護：只允許白名單 origin + 路徑前綴
+    if (!validateTargetUrl(targetUrl)) {
+      return NextResponse.json(
+        { error: '目標URL不被允許' },
         { status: 400 }
       );
     }
@@ -37,8 +56,15 @@ export async function GET(request: NextRequest) {
       }
     });
 
-    // 添加 maxauth 身份驗證標頭
-    const maxauth = process.env.NEXT_PUBLIC_MAX_AUTH || 'bWF4YWRtaW46emFxMXhzVzI=';
+    // 添加 maxauth 身份驗證標頭（僅 server 端注入，不使用 fallback 帳密）
+    const maxauth = process.env.MAX_AUTH;
+    if (!maxauth) {
+      console.warn('MAX_AUTH 環境變數未設定，無法注入 Maximo 憑證');
+      return NextResponse.json(
+        { error: '伺服器未設定 Maximo 憑證' },
+        { status: 500 }
+      );
+    }
     headers.append('maxauth', maxauth);
     headers.append('Content-Type', 'application/json');
 
@@ -56,12 +82,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(data, {
       status: response.status,
       statusText: response.statusText,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization'
-      }
+      headers: corsHeaders
     });
   } catch (error) {
     console.error('代理請求錯誤:', error);
@@ -76,10 +97,18 @@ export async function POST(request: NextRequest) {
   try {
     // 獲取要請求的目標URL
     const targetUrl = request.nextUrl.searchParams.get('url');
-    
+
     if (!targetUrl) {
       return NextResponse.json(
-        { error: '缺少目標URL參數' }, 
+        { error: '缺少目標URL參數' },
+        { status: 400 }
+      );
+    }
+
+    // SSRF 防護：只允許白名單 origin + 路徑前綴
+    if (!validateTargetUrl(targetUrl)) {
+      return NextResponse.json(
+        { error: '目標URL不被允許' },
         { status: 400 }
       );
     }
@@ -108,8 +137,15 @@ export async function POST(request: NextRequest) {
       }
     });
 
-    // 添加 maxauth 身份驗證標頭
-    const maxauth = process.env.NEXT_PUBLIC_MAX_AUTH || 'bWF4YWRtaW46emFxMXhzVzI=';
+    // 添加 maxauth 身份驗證標頭（僅 server 端注入，不使用 fallback 帳密）
+    const maxauth = process.env.MAX_AUTH;
+    if (!maxauth) {
+      console.warn('MAX_AUTH 環境變數未設定，無法注入 Maximo 憑證');
+      return NextResponse.json(
+        { error: '伺服器未設定 Maximo 憑證' },
+        { status: 500 }
+      );
+    }
     headers.append('maxauth', maxauth);
     headers.append('Content-Type', 'application/json');
 
@@ -131,12 +167,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(data, {
       status: response.status,
       statusText: response.statusText,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization'
-      }
+      headers: corsHeaders
     });
   } catch (error) {
     console.error('代理請求錯誤:', error);
@@ -152,9 +183,9 @@ export async function OPTIONS() {
   return new NextResponse(null, {
     status: 200,
     headers: {
-      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Origin': CORS_ORIGIN,
       'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, Authorization, maxauth'
     }
   });
-} 
+}
