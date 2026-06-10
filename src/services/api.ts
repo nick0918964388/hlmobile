@@ -164,6 +164,8 @@ export interface MaterialResource {
   unitCost: number;
   totalCost: number;
   location?: string;
+  storeroom?: string; // 真實領料用：item 出庫的儲存室（STORELOC）
+  binNum?: string;
   itemType?: string;
   lotNum?: string;
   status?: 'new' | 'update' | 'delete'; // 資源狀態: 新增、更新、刪除
@@ -187,6 +189,22 @@ export interface EquipmentOption {
   id: string;
   name: string;
   location: string;
+}
+
+// 庫存可用材料（供回報選擇，含儲存室與餘額）
+export interface InventoryMaterial {
+  itemnum: string;
+  storeroom: string;
+  binnum: string;
+  available: number;
+  description: string;
+}
+
+// 可用工具（供回報選擇，含存放位置）
+export interface InventoryTool {
+  itemnum: string;
+  location: string;
+  description: string;
 }
 
 // 定義異常類型和維護類型選項介面
@@ -1285,6 +1303,12 @@ export const commonApi = {
     // 使用實際API
     const url = buildApiUrl('MOBILEAPP_GET_STATUS_TRANSLATIONS');
     return apiRequest<{ [status: string]: StatusTranslation }>(url);
+  },
+
+  // 獲取可用庫存材料與工具（真實領料回報用：材料含儲存室+餘額）
+  getInventoryItems: async (): Promise<{ materials: InventoryMaterial[]; tools: InventoryTool[] }> => {
+    const url = buildApiUrl('MOBILEAPP_GET_INVENTORY_ITEMS');
+    return apiRequest<{ materials: InventoryMaterial[]; tools: InventoryTool[] }>(url);
   }
 };
 

@@ -407,144 +407,63 @@ function updateWorkOrderResources(workOrderMbo, resources) {
     }
 }
 
-// 執行SQL查詢
-function executeQuery(sql) {
-    var conn = null;
-    var stmt = null;
-    var rs = null;
-    var result = [];
-    
-    try {
-        logger.info(title + "執行SQL查詢: " + sql);
-        conn = MXServer.getMXServer().getDBManager().getConnection();
-        stmt = conn.createStatement();
-        
-        // 執行SQL查詢
-        rs = stmt.executeQuery(sql);
-        
-        // 處理結果集
-        while (rs.next()) {
-            // 處理每行數據
-            var row = {};
-            var metaData = rs.getMetaData();
-            var columnCount = metaData.getColumnCount();
-            
-            for (var i = 1; i <= columnCount; i++) {
-                var columnName = metaData.getColumnName(i);
-                var columnValue = rs.getString(i);
-                row[columnName] = columnValue;
-            }
-            
-            result.push(row);
+// 在 MboSet 中依主鍵欄位找出符合 id 的 Mbo（找不到回 null）
+function findMboById(mboSet, idField, idValue) {
+    if (!idValue) return null;
+    var target = String(idValue);
+    for (var m = mboSet.moveFirst(); m != null; m = mboSet.moveNext()) {
+        if (m.getString(idField) === target) {
+            return m;
         }
-        
-        return result;
-    } catch (e) {
-        logger.error(title + "執行SQL查詢時發生錯誤: " + e);
-        throw e;
-    } finally {
-        if (rs != null) try { rs.close(); } catch (e) {}
-        if (stmt != null) try { stmt.close(); } catch (e) {}
-        if (conn != null) try { conn.close(); } catch (e) {}
     }
+    return null;
 }
 
-// 執行SQL更新操作
-function executeUpdate(sql) {
-    var conn = null;
-    var stmt = null;
-    var affectedRows = 0;
-    
-    try {
-        logger.info(title + "執行SQL更新: " + sql);
-        conn = MXServer.getMXServer().getDBManager().getConnection();
-        stmt = conn.createStatement();
-        
-        // 執行SQL更新
-        affectedRows = stmt.executeUpdate(sql);
-        logger.info(title + "SQL更新影響的行數: " + affectedRows);
-        
-        return affectedRows;
-    } catch (e) {
-        logger.error(title + "執行SQL更新時發生錯誤: " + e);
-        throw e;
-    } finally {
-        if (stmt != null) try { stmt.close(); } catch (e) {}
-        if (conn != null) try { conn.close(); } catch (e) {}
-    }
-}
-
-// 更新勞工資源
+// 更新勞工資源（MBO 版：用可寫入的 LABTRANS relationship（whereclause refwo=:wonum and siteid=:siteid），
+// 隨主流程 mboSet.save() 一起 commit；新增列由 Maximo 自動配 LABTRANSID，並自動回填 REFWO/SITEID。
+// setValue 只用 NOACCESSCHECK（不可加 NOVALIDATION，否則欄位初始化會失敗），讓 Maximo 正常驗證並自動算 LINECOST。
+// 取代原本的 raw SQL 字串拼接，免去 SQL injection / 固定主鍵 999999999 / 半套寫入問題。
+// 註：刪除已核准的勞工交易會被 Maximo 規則擋下（BMXAA2563E），此為正確行為，前端僅應刪除未核准/新增列）
 function updateLaborResources(workOrderMbo, laborResources) {
     var wonum = workOrderMbo.getString("WONUM");
-    var siteid = workOrderMbo.getString("SITEID");
-    
+
     try {
         logger.info(title + "更新勞工資源，數量: " + laborResources.length + "，工單: " + wonum);
-        
-        // 處理每個勞工資源
+
+        var laborSet = workOrderMbo.getMboSet("LABTRANS");
+
         for (var i = 0; i < laborResources.length; i++) {
             var labor = laborResources[i];
             var status = labor.status || 'update'; // 若沒有狀態則預設為更新
-            
-            // 清理ID中的逗號
-            var laborId = String(labor.id || "").replace(/,/g, "");
+            var laborId = String(labor.id || "");
             logger.info(title + "處理勞工資源，ID: " + laborId + ", 狀態: " + status);
-            
+
             // 1. 刪除資源
             if (status === 'delete') {
-                logger.info(title + "刪除勞工資源 [ID: " + laborId + "]");
-                
-                if (laborId && laborId.indexOf("L_") !== 0) {
-                    var deleteSql = "DELETE FROM LABTRANS WHERE LABTRANSID = '" + laborId + "'";
-                    executeUpdate(deleteSql);
+                var del = findMboById(laborSet, "LABTRANSID", laborId);
+                if (del != null) {
+                    del.delete();
                     logger.info(title + "已刪除勞工資源 [ID: " + laborId + "]");
                 }
-                continue; // 跳過其他處理
+                continue;
             }
-            
-            // 2. 更新或新增資源
-            var isNew = status === 'new' || laborId.indexOf("L_") === 0;
-                
-            if (!isNew && laborId) {
-                // 檢查該ID的記錄是否存在
-                var checkSql = "SELECT LABTRANSID FROM LABTRANS WHERE LABTRANSID = '" + laborId + "'";
-                var existingRecords = executeQuery(checkSql);
-                
-                if (existingRecords.length > 0) {
-                    // 記錄存在，進行更新
-                    var updateSql = "UPDATE LABTRANS SET " +
-                                   "LABORCODE = '" + labor.laborCode + "', " +
-                                   "REGULARHRS = " + labor.hours;
-                    
-                    if (labor.craftType) {
-                        updateSql += ", CRAFT = '" + labor.craftType + "'";
-                    }
-                    
-                    updateSql += " WHERE LABTRANSID = '" + laborId + "'";
-                    
-                    executeUpdate(updateSql);
-                    logger.info(title + "已更新現有勞工資源 [ID: " + laborId + "]");
-                } else {
-                    isNew = true; // 記錄不存在，改為新增
-                }
+
+            // 2. 更新既有或新增
+            var isNew = status === 'new' || laborId.indexOf("L_") === 0 || laborId === "";
+            var mbo = isNew ? null : findMboById(laborSet, "LABTRANSID", laborId);
+
+            if (mbo == null) {
+                // 新增：add() 由 Maximo 配 LABTRANSID 並自動回填 REFWO/SITEID
+                mbo = laborSet.add();
+                logger.info(title + "新增勞工資源（MBO add）");
+            } else {
+                logger.info(title + "更新現有勞工資源 [ID: " + laborId + "]");
             }
-            
-            if (isNew) {
-                // 新增記錄
-                var insertSql = "INSERT INTO LABTRANS (LABTRANSID, LABORCODE, REGULARHRS";
-                var valuesSql = " VALUES (999999999, '" + labor.laborCode + "', " + labor.hours;
-                
-                if (labor.craftType) {
-                    insertSql += ", CRAFT";
-                    valuesSql += ", '" + labor.craftType + "'";
-                }
-                
-                insertSql += ", WONUM, SITEID)";
-                valuesSql += ", '" + wonum + "', '" + siteid + "')";
-                
-                executeUpdate(insertSql + valuesSql);
-                logger.info(title + "已添加新勞工資源 [固定ID: 999999999]");
+
+            mbo.setValue("LABORCODE", labor.laborCode, MboConstants.NOACCESSCHECK);
+            mbo.setValue("REGULARHRS", labor.hours, MboConstants.NOACCESSCHECK);
+            if (labor.craftType) {
+                mbo.setValue("CRAFT", labor.craftType, MboConstants.NOACCESSCHECK);
             }
         }
     } catch (e) {
@@ -553,80 +472,58 @@ function updateLaborResources(workOrderMbo, laborResources) {
     }
 }
 
-// 更新材料資源
+// 更新材料資源（MBO 版：用可寫入的 MATUSETRANS relationship，隨工單 save 一起 commit，等同真實領料。
+// ITEMNUM 走驗證（不可加 NOVALIDATION，否則 item 欄位初始化失敗 NPE）。
+// 真實領料必填儲存室 STORELOC，且該 item 必須在該儲存室有庫存餘額，否則 save 被 Maximo 擋下（BMXAA1818E/1877E）。
+// 註：SHOWACTUALMATERIAL 是顯示用關聯、add() 會 NullPointerException，故改用 MATUSETRANS。
+// 前端 WorkReport 需在 material 物件附帶 storeroom（儲存室）欄位）
 function updateMaterialResources(workOrderMbo, materialResources) {
     var wonum = workOrderMbo.getString("WONUM");
-    var siteid = workOrderMbo.getString("SITEID");
-    
+
     try {
         logger.info(title + "更新材料資源，數量: " + materialResources.length + "，工單: " + wonum);
-        
-        // 處理每個材料資源
+
+        var materialSet = workOrderMbo.getMboSet("MATUSETRANS");
+
         for (var i = 0; i < materialResources.length; i++) {
             var material = materialResources[i];
             var status = material.status || 'update'; // 若沒有狀態則預設為更新
-            
-            // 清理ID中的逗號
-            var materialId = String(material.id || "").replace(/,/g, "");
+            var materialId = String(material.id || "");
             logger.info(title + "處理材料資源，ID: " + materialId + ", 狀態: " + status);
-            
+
             // 1. 刪除資源
             if (status === 'delete') {
-                logger.info(title + "刪除材料資源 [ID: " + materialId + "]");
-                
-                if (materialId && materialId.indexOf("M_") !== 0) {
-                    var deleteSql = "DELETE FROM MATUSETRANS WHERE MATUSETRANSID = '" + materialId + "'";
-                    executeUpdate(deleteSql);
+                var del = findMboById(materialSet, "MATUSETRANSID", materialId);
+                if (del != null) {
+                    del.delete();
                     logger.info(title + "已刪除材料資源 [ID: " + materialId + "]");
                 }
-                continue; // 跳過其他處理
+                continue;
             }
-            
-            // 2. 更新或新增資源
-            var isNew = status === 'new' || materialId.indexOf("M_") === 0;
-                
-            if (!isNew && materialId) {
-                // 檢查該ID的記錄是否存在
-                var checkSql = "SELECT MATUSETRANSID FROM MATUSETRANS WHERE MATUSETRANSID = '" + materialId + "'";
-                var existingRecords = executeQuery(checkSql);
-                
-                if (existingRecords.length > 0) {
-                    // 記錄存在，進行更新
-                    var updateSql = "UPDATE MATUSETRANS SET " +
-                                   "ITEMNUM = '" + material.itemNum + "', " +
-                                   "DESCRIPTION = '" + (material.name || material.description).replace(/'/g, "''") + "', " +
-                                   "QUANTITY = " + material.quantity;
-                    
-                    if (material.unitCost) {
-                        updateSql += ", UNITCOST = " + material.unitCost;
-                    }
-                    
-                    updateSql += " WHERE MATUSETRANSID = '" + materialId + "'";
-                    
-                    executeUpdate(updateSql);
-                    logger.info(title + "已更新現有材料資源 [ID: " + materialId + "]");
-                } else {
-                    isNew = true; // 記錄不存在，改為新增
-                }
+
+            // 2. 更新既有或新增
+            var isNew = status === 'new' || materialId.indexOf("M_") === 0 || materialId === "";
+            var mbo = isNew ? null : findMboById(materialSet, "MATUSETRANSID", materialId);
+
+            if (mbo == null) {
+                mbo = materialSet.add();
+                logger.info(title + "新增材料資源（MBO add）");
+            } else {
+                logger.info(title + "更新現有材料資源 [ID: " + materialId + "]");
             }
-            
-            if (isNew) {
-                // 新增記錄
-                var insertSql = "INSERT INTO MATUSETRANS (MATUSETRANSID, ITEMNUM, DESCRIPTION, QUANTITY";
-                var valuesSql = " VALUES (999999999, '" + material.itemNum + "', '" + 
-                              (material.name || material.description).replace(/'/g, "''") + "', " + 
-                              material.quantity;
-                
-                if (material.unitCost) {
-                    insertSql += ", UNITCOST";
-                    valuesSql += ", " + material.unitCost;
-                }
-                
-                insertSql += ", WONUM, SITEID)";
-                valuesSql += ", '" + wonum + "', '" + siteid + "')";
-                
-                executeUpdate(insertSql + valuesSql);
-                logger.info(title + "已添加新材料資源 [固定ID: 999999999]");
+
+            // ITEMNUM 走驗證，DESCRIPTION 由 item 自動帶入，不手動覆寫
+            mbo.setValue("ITEMNUM", material.itemNum, MboConstants.NOACCESSCHECK);
+            // 真實領料必填儲存室（前端需附帶 material.storeroom）
+            if (material.storeroom) {
+                mbo.setValue("STORELOC", material.storeroom, MboConstants.NOACCESSCHECK);
+            }
+            if (material.binNum) {
+                mbo.setValue("BINNUM", material.binNum, MboConstants.NOACCESSCHECK);
+            }
+            mbo.setValue("QUANTITY", material.quantity, MboConstants.NOACCESSCHECK);
+            if (material.unitCost) {
+                mbo.setValue("UNITCOST", material.unitCost, MboConstants.NOACCESSCHECK);
             }
         }
     } catch (e) {
@@ -635,80 +532,54 @@ function updateMaterialResources(workOrderMbo, materialResources) {
     }
 }
 
-// 更新工具資源
+// 更新工具資源（MBO 版：用可寫入的 TOOLTRANS relationship，隨工單 save 一起 commit。
+// ITEMNUM 走驗證（不可加 NOVALIDATION）。TOOLTRANS 的儲存室欄位是 LOCATION（非 STORELOC）。
+// 註：SHOWACTUALTOOL 是顯示用關聯、add() 會 NullPointerException，故改用 TOOLTRANS。
+// 前端 WorkReport 需在 tool 物件附帶 location 欄位）
 function updateToolResources(workOrderMbo, toolResources) {
     var wonum = workOrderMbo.getString("WONUM");
-    var siteid = workOrderMbo.getString("SITEID");
-    
+
     try {
         logger.info(title + "更新工具資源，數量: " + toolResources.length + "，工單: " + wonum);
-        
-        // 處理每個工具資源
+
+        var toolSet = workOrderMbo.getMboSet("TOOLTRANS");
+
         for (var i = 0; i < toolResources.length; i++) {
             var tool = toolResources[i];
             var status = tool.status || 'update'; // 若沒有狀態則預設為更新
-            
-            // 清理ID中的逗號
-            var toolId = String(tool.id || "").replace(/,/g, "");
+            var toolId = String(tool.id || "");
             logger.info(title + "處理工具資源，ID: " + toolId + ", 狀態: " + status);
-            
+
             // 1. 刪除資源
             if (status === 'delete') {
-                logger.info(title + "刪除工具資源 [ID: " + toolId + "]");
-                
-                if (toolId && toolId.indexOf("T_") !== 0) {
-                    var deleteSql = "DELETE FROM TOOLTRANS WHERE TOOLTRANSID = '" + toolId + "'";
-                    executeUpdate(deleteSql);
+                var del = findMboById(toolSet, "TOOLTRANSID", toolId);
+                if (del != null) {
+                    del.delete();
                     logger.info(title + "已刪除工具資源 [ID: " + toolId + "]");
                 }
-                continue; // 跳過其他處理
+                continue;
             }
-            
-            // 2. 更新或新增資源
-            var isNew = status === 'new' || toolId.indexOf("T_") === 0;
-                
-            if (!isNew && toolId) {
-                // 檢查該ID的記錄是否存在
-                var checkSql = "SELECT TOOLTRANSID FROM TOOLTRANS WHERE TOOLTRANSID = '" + toolId + "'";
-                var existingRecords = executeQuery(checkSql);
-                
-                if (existingRecords.length > 0) {
-                    // 記錄存在，進行更新
-                    var updateSql = "UPDATE TOOLTRANS SET " +
-                                   "ITEMNUM = '" + tool.toolCode + "', " +
-                                   "DESCRIPTION = '" + (tool.name || tool.description).replace(/'/g, "''") + "', " +
-                                   "TOOLQTY = " + tool.quantity;
-                    
-                    if (tool.hours) {
-                        updateSql += ", TOOLHRS = " + tool.hours;
-                    }
-                    
-                    updateSql += " WHERE TOOLTRANSID = '" + toolId + "'";
-                    
-                    executeUpdate(updateSql);
-                    logger.info(title + "已更新現有工具資源 [ID: " + toolId + "]");
-                } else {
-                    isNew = true; // 記錄不存在，改為新增
-                }
+
+            // 2. 更新既有或新增
+            var isNew = status === 'new' || toolId.indexOf("T_") === 0 || toolId === "";
+            var mbo = isNew ? null : findMboById(toolSet, "TOOLTRANSID", toolId);
+
+            if (mbo == null) {
+                mbo = toolSet.add();
+                logger.info(title + "新增工具資源（MBO add）");
+            } else {
+                logger.info(title + "更新現有工具資源 [ID: " + toolId + "]");
             }
-            
-            if (isNew) {
-                // 新增記錄
-                var insertSql = "INSERT INTO TOOLTRANS (TOOLTRANSID, ITEMNUM, DESCRIPTION, TOOLQTY";
-                var valuesSql = " VALUES (999999999, '" + tool.toolCode + "', '" + 
-                              (tool.name || tool.description).replace(/'/g, "''") + "', " + 
-                              tool.quantity;
-                
-                if (tool.hours) {
-                    insertSql += ", TOOLHRS";
-                    valuesSql += ", " + tool.hours;
-                }
-                
-                insertSql += ", WONUM, SITEID)";
-                valuesSql += ", '" + wonum + "', '" + siteid + "')";
-                
-                executeUpdate(insertSql + valuesSql);
-                logger.info(title + "已添加新工具資源 [固定ID: 999999999]");
+
+            // ITEMNUM 走驗證，DESCRIPTION 由 item 自動帶入
+            mbo.setValue("ITEMNUM", tool.toolCode, MboConstants.NOACCESSCHECK);
+            // TOOLTRANS 儲存室欄位為 LOCATION（前端需附帶 tool.location）
+            if (tool.location) {
+                mbo.setValue("LOCATION", tool.location, MboConstants.NOACCESSCHECK);
+            }
+            mbo.setValue("TOOLQTY", tool.quantity, MboConstants.NOACCESSCHECK);
+            if (tool.hours) {
+                mbo.setValue("TOOLHRS", tool.hours, MboConstants.NOACCESSCHECK);
             }
         }
     } catch (e) {

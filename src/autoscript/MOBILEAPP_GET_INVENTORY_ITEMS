@@ -1,0 +1,50 @@
+load("nashorn:mozilla_compat.js");
+// MOBILEAPP_GET_INVENTORY_ITEMS
+// 回傳「實際有庫存的材料（item + 儲存室 + 餘額）」與「工具（item + location）」，
+// 供行動端回報時選擇。真實領料(option A)需要儲存室，故材料來源用 INVBALANCES（有餘額者）。
+importPackage(Packages.psdi.mbo);
+importPackage(Packages.psdi.server);
+var SITE = "HL2";
+var out = { materials: [], tools: [] };
+
+// 材料：有庫存的 inventory balance（含儲存室 LOCATION 與餘額 CURBAL）
+var invSet = null;
+try {
+    invSet = MXServer.getMXServer().getMboSet("INVBALANCES", userInfo);
+    invSet.setWhere("curbal > 0 and siteid='" + SITE + "'");
+    invSet.setOrderBy("itemnum, location");
+    var count = 0;
+    for (var ib = invSet.moveFirst(); ib != null && count < 1000; ib = invSet.moveNext()) {
+        var desc = "";
+        try { desc = ib.getString("ITEM.DESCRIPTION"); } catch (de) {}
+        out.materials.push({
+            itemnum: ib.getString("ITEMNUM"),
+            storeroom: ib.getString("LOCATION"),
+            binnum: ib.getString("BINNUM"),
+            available: ib.getDouble("CURBAL"),
+            description: desc
+        });
+        count++;
+    }
+} catch (e) { out.matError = String(e); } finally { if (invSet != null) { try { invSet.close(); } catch(e){} } }
+
+// 工具：取既有 TOOLTRANS 用過的工具（itemnum + location）做清單（前端再以 itemnum 去重）
+var ttSet = null;
+try {
+    ttSet = MXServer.getMXServer().getMboSet("TOOLTRANS", userInfo);
+    ttSet.setWhere("siteid='" + SITE + "'");
+    ttSet.setOrderBy("itemnum");
+    var seen = {};
+    for (var t = ttSet.moveFirst(); t != null; t = ttSet.moveNext()) {
+        var inum = t.getString("ITEMNUM");
+        var loc = t.getString("LOCATION");
+        var key = inum + "|" + loc;
+        if (seen[key]) continue;
+        seen[key] = true;
+        var tdesc = "";
+        try { tdesc = t.getString("ITEM.DESCRIPTION"); } catch (de) {}
+        out.tools.push({ itemnum: inum, location: loc, description: tdesc });
+    }
+} catch (e) { out.toolError = String(e); } finally { if (ttSet != null) { try { ttSet.close(); } catch(e){} } }
+
+responseBody = JSON.stringify(out);

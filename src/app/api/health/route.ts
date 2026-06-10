@@ -2,6 +2,9 @@ import { NextResponse, NextRequest } from 'next/server';
 import api from '@/services/api';
 import type { SystemHealth } from '@/services/api';
 
+// 此 route 會讀 request.nextUrl.origin 做 server 端 self-fetch，無法靜態預先產生，標記為動態
+export const dynamic = 'force-dynamic';
+
 // 將狀態對應到 HTTP 狀態碼，讓 middleware 能依此判斷是否導向維護頁
 function httpStatusForHealth(status: SystemHealth['status']): number {
   return status === 'ok' ? 200 : 503;

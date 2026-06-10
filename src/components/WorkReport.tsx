@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { ReportItem, LaborResource, MaterialResource, ToolResource } from '@/services/api';
+import { ReportItem, LaborResource, MaterialResource, ToolResource, commonApi } from '@/services/api';
 
 interface Material {
   id: string;
   code: string;
   name: string;
   quantity: number;
+  storeroom?: string; // 真實領料用：出庫儲存室
 }
 
 interface Tool {
@@ -14,6 +15,7 @@ interface Tool {
   code: string;
   name: string;
   quantity: number;
+  location?: string; // 工具存放位置
 }
 
 interface LaborHour {
@@ -43,8 +45,8 @@ const WorkReport: React.FC<WorkReportProps> = ({ workOrderId, onCompleteStatusCh
   const [tools, setTools] = useState<Tool[]>([]);
   const [laborHours, setLaborHours] = useState<LaborHour[]>([]);
   const [reportItems, setReportItems] = useState<ReportItem[]>([]);
-  const [newMaterial, setNewMaterial] = useState({ code: '', name: '', quantity: 1 });
-  const [newTool, setNewTool] = useState({ code: '', name: '', quantity: 1 });
+  const [newMaterial, setNewMaterial] = useState({ code: '', name: '', quantity: 1, storeroom: '' });
+  const [newTool, setNewTool] = useState({ code: '', name: '', quantity: 1, location: '' });
   const [newLabor, setNewLabor] = useState({ staffId: '', staffName: '', hours: 1 });
   const [showAddMaterial, setShowAddMaterial] = useState(false);
   const [showAddTool, setShowAddTool] = useState(false);
@@ -72,22 +74,43 @@ const WorkReport: React.FC<WorkReportProps> = ({ workOrderId, onCompleteStatusCh
     tools: []
   });
 
-  // 模擬材料列表
-  const materialList = [
-    { code: '11R22.5GT-7', name: 'Goodyear 11R22.5G318 Trailer Tire' },
-    { code: '0-0031', name: 'Elbow, Street- 1-1/8 In X 90 Deg' }
-  ];
+  // 可用材料 / 工具清單（從 Maximo 實際庫存載入；真實領料需要儲存室與餘額）
+  const [materialList, setMaterialList] = useState<{ code: string; name: string; storeroom: string; available: number }[]>([]);
+  const [toolList, setToolList] = useState<{ code: string; name: string; location: string }[]>([]);
 
-  // 模擬工具列表
-  const toolList = [
-    { code: 'GENERATO', name: '400W ELECTRIC GENERATOR' }
-  ];
+  // 載入庫存可用材料 / 工具
+  useEffect(() => {
+    let cancelled = false;
+    commonApi.getInventoryItems()
+      .then(({ materials, tools }) => {
+        if (cancelled) return;
+        setMaterialList(
+          (materials || []).map(m => ({
+            code: m.itemnum,
+            name: m.description || m.itemnum,
+            storeroom: m.storeroom,
+            available: m.available,
+          }))
+        );
+        // 工具以 itemnum 去重，保留第一個非空 location
+        const seen = new Set<string>();
+        const toolOptions: { code: string; name: string; location: string }[] = [];
+        for (const x of tools || []) {
+          if (seen.has(x.itemnum)) continue;
+          seen.add(x.itemnum);
+          toolOptions.push({ code: x.itemnum, name: x.description || x.itemnum, location: x.location || '' });
+        }
+        setToolList(toolOptions);
+      })
+      .catch(err => console.error('載入庫存清單失敗:', err));
+    return () => { cancelled = true; };
+  }, []);
 
-  // 模擬人員列表
+  // 模擬人員列表（labor 不涉庫存，維持既有來源）
   const staffList = [
     { id: 'FT1', name: 'Electrical Technician' },
     { id: 'FT2', name: 'Electrical Technician' },
-    
+
   ];
 
   // 文字翻譯對照表
@@ -353,6 +376,7 @@ const WorkReport: React.FC<WorkReportProps> = ({ workOrderId, onCompleteStatusCh
             name: material.name,
             description: material.name,
             quantity: material.quantity,
+            storeroom: material.storeroom, // 真實領料的出庫儲存室
             unitCost: 0,
             totalCost: 0,
             status: isNew ? 'new' as const : (prevMaterial ? 'update' as const : 'new' as const)
@@ -370,6 +394,7 @@ const WorkReport: React.FC<WorkReportProps> = ({ workOrderId, onCompleteStatusCh
             name: tool.name,
             description: tool.name,
             quantity: tool.quantity,
+            location: tool.location, // 工具存放位置
             status: isNew ? 'new' as const : (prevTool ? 'update' as const : 'new' as const)
           };
         })
@@ -431,7 +456,7 @@ const WorkReport: React.FC<WorkReportProps> = ({ workOrderId, onCompleteStatusCh
     if (newMaterial.code.trim() && (newMaterial.name.trim() || customMaterial) && newMaterial.quantity > 0) {
       const id = `material_${Date.now()}`;
       setMaterials([...materials, { id, ...newMaterial, quantity: Math.abs(Math.floor(newMaterial.quantity)) }]);
-      setNewMaterial({ code: '', name: '', quantity: 1 });
+      setNewMaterial({ code: '', name: '', quantity: 1, storeroom: '' });
       setShowAddMaterial(false);
       setCustomMaterial(false);
     }
@@ -446,7 +471,7 @@ const WorkReport: React.FC<WorkReportProps> = ({ workOrderId, onCompleteStatusCh
     if (newTool.code.trim() && (newTool.name.trim() || customTool) && newTool.quantity > 0) {
       const id = `tool_${Date.now()}`;
       setTools([...tools, { id, ...newTool, quantity: Math.abs(Math.floor(newTool.quantity)) }]);
-      setNewTool({ code: '', name: '', quantity: 1 });
+      setNewTool({ code: '', name: '', quantity: 1, location: '' });
       setShowAddTool(false);
       setCustomTool(false);
     }
@@ -559,7 +584,8 @@ const WorkReport: React.FC<WorkReportProps> = ({ workOrderId, onCompleteStatusCh
     const selectedCode = e.target.value;
     const selected = materialList.find(item => item.code === selectedCode);
     if (selected) {
-      setNewMaterial({ ...newMaterial, code: selected.code, name: selected.name });
+      // 同時帶入儲存室（真實領料必填）
+      setNewMaterial({ ...newMaterial, code: selected.code, name: selected.name, storeroom: selected.storeroom });
     }
   };
 
@@ -567,7 +593,7 @@ const WorkReport: React.FC<WorkReportProps> = ({ workOrderId, onCompleteStatusCh
     const selectedCode = e.target.value;
     const selected = toolList.find(item => item.code === selectedCode);
     if (selected) {
-      setNewTool({ ...newTool, code: selected.code, name: selected.name });
+      setNewTool({ ...newTool, code: selected.code, name: selected.name, location: selected.location });
     }
   };
 
@@ -986,8 +1012,8 @@ const WorkReport: React.FC<WorkReportProps> = ({ workOrderId, onCompleteStatusCh
                           {t('selectMaterial')}
                         </option>
                         {materialList.map(material => (
-                          <option key={material.code} value={material.code}>
-                            {material.code} - {material.name}
+                          <option key={`${material.code}_${material.storeroom}`} value={material.code}>
+                            {material.code} - {material.name}（{material.storeroom}｜{material.available}）
                           </option>
                         ))}
                       </select>
@@ -1031,7 +1057,7 @@ const WorkReport: React.FC<WorkReportProps> = ({ workOrderId, onCompleteStatusCh
                     onClick={() => {
                       setShowAddMaterial(false);
                       setCustomMaterial(false);
-                      setNewMaterial({ code: '', name: '', quantity: 1 });
+                      setNewMaterial({ code: '', name: '', quantity: 1, storeroom: '' });
                     }}
                     className="px-3 py-1 bg-gray-300 text-gray-700 rounded-md text-sm hover:bg-gray-400"
                   >
@@ -1109,7 +1135,7 @@ const WorkReport: React.FC<WorkReportProps> = ({ workOrderId, onCompleteStatusCh
                         </option>
                         {toolList.map(tool => (
                           <option key={tool.code} value={tool.code}>
-                            {tool.code} - {tool.name}
+                            {tool.code} - {tool.name}{tool.location ? `（${tool.location}）` : ''}
                           </option>
                         ))}
                       </select>
@@ -1153,7 +1179,7 @@ const WorkReport: React.FC<WorkReportProps> = ({ workOrderId, onCompleteStatusCh
                     onClick={() => {
                       setShowAddTool(false);
                       setCustomTool(false);
-                      setNewTool({ code: '', name: '', quantity: 1 });
+                      setNewTool({ code: '', name: '', quantity: 1, location: '' });
                     }}
                     className="px-3 py-1 bg-gray-300 text-gray-700 rounded-md text-sm hover:bg-gray-400"
                   >
