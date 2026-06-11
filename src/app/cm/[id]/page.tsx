@@ -1322,6 +1322,7 @@ export default function CMDetailPage({ params }: { params: { id: string } }) {
           isOpen={showSubmitModal}
           onClose={() => setShowSubmitModal(false)}
           onSubmit={handleSubmitWorkOrder}
+          workOrderId={params.id}
         />
       )}
     </div>

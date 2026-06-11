@@ -766,6 +766,7 @@ export default function PMDetailPage({ params }: { params: { id: string } }) {
         isOpen={showSubmitModal}
         onClose={() => setShowSubmitModal(false)}
         onSubmit={handleSubmitWorkOrder}
+        workOrderId={params.id}
       />
     </div>
   );

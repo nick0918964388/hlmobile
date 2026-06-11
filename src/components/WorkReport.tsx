@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { ReportItem, LaborResource, MaterialResource, ToolResource, commonApi } from '@/services/api';
+import BarcodeScanner from './BarcodeScanner';
 
 interface Material {
   id: string;
@@ -48,6 +49,7 @@ const WorkReport: React.FC<WorkReportProps> = ({ workOrderId, onCompleteStatusCh
   const [newMaterial, setNewMaterial] = useState({ code: '', name: '', quantity: 1, storeroom: '' });
   const [newTool, setNewTool] = useState({ code: '', name: '', quantity: 1, location: '' });
   const [newLabor, setNewLabor] = useState({ staffId: '', staffName: '', hours: 1 });
+  const [scanFor, setScanFor] = useState<null | 'material' | 'tool'>(null);
   const [showAddMaterial, setShowAddMaterial] = useState(false);
   const [showAddTool, setShowAddTool] = useState(false);
   const [showAddLabor, setShowAddLabor] = useState(false);
@@ -597,6 +599,31 @@ const WorkReport: React.FC<WorkReportProps> = ({ workOrderId, onCompleteStatusCh
     }
   };
 
+  // 條碼/QR 掃描結果：對照庫存清單自動帶入代號（找不到則當自訂代碼）
+  const handleScanResult = (value: string) => {
+    const code = value.trim();
+    if (scanFor === 'material') {
+      const found = materialList.find(m => m.code.toLowerCase() === code.toLowerCase());
+      if (found) {
+        setCustomMaterial(false);
+        setNewMaterial({ ...newMaterial, code: found.code, name: found.name, storeroom: found.storeroom });
+      } else {
+        setCustomMaterial(true);
+        setNewMaterial({ ...newMaterial, code });
+      }
+    } else if (scanFor === 'tool') {
+      const found = toolList.find(tl => tl.code.toLowerCase() === code.toLowerCase());
+      if (found) {
+        setCustomTool(false);
+        setNewTool({ ...newTool, code: found.code, name: found.name, location: found.location });
+      } else {
+        setCustomTool(true);
+        setNewTool({ ...newTool, code });
+      }
+    }
+    setScanFor(null);
+  };
+
   const handleStaffChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const selectedId = e.target.value;
     const selected = staffList.find(item => item.id === selectedId);
@@ -792,6 +819,9 @@ const WorkReport: React.FC<WorkReportProps> = ({ workOrderId, onCompleteStatusCh
 
   return (
     <div className="flex-1 overflow-auto bg-gray-50">
+      {scanFor && (
+        <BarcodeScanner onDetect={handleScanResult} onCancel={() => setScanFor(null)} />
+      )}
       <div className="mx-auto p-4 max-w-4xl">
         {/* 頂部提示訊息 */}
         {hasNewResources && (
@@ -987,6 +1017,14 @@ const WorkReport: React.FC<WorkReportProps> = ({ workOrderId, onCompleteStatusCh
                     <label htmlFor="custom-material" className="ml-2 block text-sm text-gray-700">
                       {t('customInput')}
                     </label>
+                    <button
+                      type="button"
+                      onClick={() => setScanFor('material')}
+                      className="ml-auto flex items-center gap-1 text-sm text-teal-600 border border-teal-600 rounded-md px-2 py-1 hover:bg-teal-50"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7V4h3M4 17v3h3M20 7V4h-3M20 17v3h-3M8 12h8M8 9h.01M8 15h.01M16 9h.01M16 15h.01" /></svg>
+                      {language === 'en' ? 'Scan' : '掃描'}
+                    </button>
                   </div>
                 </div>
                 
@@ -1109,6 +1147,14 @@ const WorkReport: React.FC<WorkReportProps> = ({ workOrderId, onCompleteStatusCh
                     <label htmlFor="custom-tool" className="ml-2 block text-sm text-gray-700">
                       {t('customInput')}
                     </label>
+                    <button
+                      type="button"
+                      onClick={() => setScanFor('tool')}
+                      className="ml-auto flex items-center gap-1 text-sm text-teal-600 border border-teal-600 rounded-md px-2 py-1 hover:bg-teal-50"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7V4h3M4 17v3h3M20 7V4h-3M20 17v3h-3M8 12h8M8 9h.01M8 15h.01M16 9h.01M16 15h.01" /></svg>
+                      {language === 'en' ? 'Scan' : '掃描'}
+                    </button>
                   </div>
                 </div>
                 
