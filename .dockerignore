@@ -1,0 +1,15 @@
+node_modules
+.next
+.git
+.env*
+npm-debug.log*
+README.md
+docs
+*.md
+.vscode
+.idea
+public/sw.js
+public/workbox-*.js
+public/sw.js.map
+public/workbox-*.js.map
+deployed-*.txt

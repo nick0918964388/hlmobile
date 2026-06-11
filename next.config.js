@@ -51,6 +51,8 @@ const withPWA = require("@ducanh2912/next-pwa").default({
 const nextConfig = {
   reactStrictMode: true,
   swcMinify: true,
+  // 產生獨立輸出，供 Docker 精簡映像使用
+  output: "standalone",
   async rewrites() {
     return {
       beforeFiles: [
