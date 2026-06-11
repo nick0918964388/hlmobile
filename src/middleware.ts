@@ -78,8 +78,9 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   } catch (error) {
     console.error('健康檢查失敗:', error);
-    // 如果健康檢查API呼叫失敗，也重定向到維護頁面
-    return NextResponse.redirect(new URL('/maintenance', request.url));
+    // fail-open：健康檢查本身無法判定（如反代/tunnel 下 self-fetch 失敗）時放行，
+    // 避免因檢查故障把所有使用者擋在維護頁外。真正維護由 /api/health 明確回非 ok 觸發。
+    return NextResponse.next();
   }
 }
 

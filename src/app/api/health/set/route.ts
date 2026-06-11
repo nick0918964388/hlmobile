@@ -1,13 +1,6 @@
 import { NextResponse, NextRequest } from 'next/server';
 import type { SystemHealth } from '@/services/api';
-
-// 保存當前模擬的健康狀態
-// TODO: module 級變數在多實例 / serverless 環境不會共享，
-// 正式環境需改為外部儲存（如 Redis / DB）才能跨實例同步維護狀態。
-let currentHealthStatus: SystemHealth = {
-  status: 'ok',
-  message: '系統運行正常'
-};
+import { getMaintenance, setMaintenance } from '@/lib/maintenance';
 
 // 設置系統健康狀態 (需要管理員權限)
 export async function POST(request: NextRequest) {
@@ -36,18 +29,19 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    // 更新健康狀態
-    currentHealthStatus = {
+    // 更新健康狀態（寫入共享模組，/api/health 直接讀）
+    const next: SystemHealth = {
       status: body.status,
-      message: body.message || (body.status === 'ok' 
-        ? '系統運行正常' 
+      message: body.message || (body.status === 'ok'
+        ? '系統運行正常'
         : '系統目前正在維護中'),
       estimatedRecoveryTime: body.estimatedRecoveryTime
     };
-    
+    setMaintenance(next);
+
     return NextResponse.json({
       success: true,
-      currentStatus: currentHealthStatus
+      currentStatus: next
     });
     
   } catch (error) {
@@ -59,7 +53,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// 獲取當前模擬的健康狀態
+// 獲取當前維護狀態
 export async function GET() {
-  return NextResponse.json(currentHealthStatus);
+  return NextResponse.json(getMaintenance());
 } 
