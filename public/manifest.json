@@ -1,0 +1,25 @@
+{
+  "name": "離岸風電保養回報系統",
+  "short_name": "風電報工",
+  "description": "風機設備保養與故障回報管理系統",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0d9488",
+  "theme_color": "#0d9488",
+  "icons": [
+    {
+      "src": "/wind-turbine.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/offshore-wind-farm.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}
